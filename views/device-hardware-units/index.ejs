@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Phân bổ phần cứng</title>
+
+  <%- include('../partials/header') %>
+
+<div class="container mt-4">
+  <h2 class="mb-4">Phân bổ phần cứng cho thiết bị</h2>
+
+  <form id="filterDeviceHardwareForm" class="row g-2 mb-3">
+    <div class="col-md-3"><input name="deviceName" class="form-control" placeholder="Tên thiết bị" /></div>
+    <div class="col-md-3"><input name="hardwareKeyword" class="form-control" placeholder="Tên phần cứng hoặc serial" /></div>
+    <div class="col-md-6 text-end">
+      <button class="btn btn-primary">Tìm</button>
+      <button type="button" id="resetDeviceHardwareFilter" class="btn btn-secondary ms-2">Reset</button>
+      <button type="button" id="btnOpenCreateModal" class="btn btn-success ms-2">➕ Gán phần cứng</button>
+    </div>
+  </form>
+
+  <table class="table table-bordered">
+    <thead><tr><th>Thiết bị</th><th>Phần cứng đã gán</th><th>Thao tác</th></tr></thead>
+    <tbody id="deviceHardwareTable"></tbody>
+  </table>
+</div>
+
+<!-- Modal tạo mới -->
+<div class="modal fade" id="createDeviceHardwareModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <form id="createDeviceHardwareForm" class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Gán phần cứng mới</h5></div>
+      <div class="modal-body">
+        <select id="createDeviceDropdown" class="form-select mb-3" required></select>
+        <select multiple id="createHardwareUnitsDropdown" class="form-select" required></select>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-success">Gán</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal sửa -->
+<div class="modal fade" id="editDeviceHardwareModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <form id="editDeviceHardwareForm" class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Sửa phần cứng thiết bị</h5></div>
+      <div class="modal-body">
+        <select id="editDeviceDropdown" class="form-select mb-3" disabled></select>
+        <select multiple id="editHardwareUnitsDropdown" class="form-select" required></select>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-warning">Cập nhật</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/deviceHardwareUnits.js"></script>
+</body>
+</html>

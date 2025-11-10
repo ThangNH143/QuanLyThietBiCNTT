@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Gán thiết bị cho phòng ban</title>
+
+  <%- include('../partials/header') %>
+
+<div class="container mt-4">
+  <h2 class="mb-4">Gán thiết bị nơi sử dụng</h2>
+
+  <!-- Bộ lọc -->
+  <form id="filterDeviceAssignmentForm" class="row g-2 mb-3">
+    <div class="col-md-4"><input name="deviceName" class="form-control" placeholder="Tên thiết bị" /></div>
+    <div class="col-md-4"><input name="deptName" class="form-control" placeholder="Phòng ban sử dụng" /></div>
+    <div class="col-md-4">
+      <select name="status" class="form-select">
+        <option value="active">Đang sử dụng</option>
+        <option value="revoked">Đã thu hồi</option>
+        <option value="all">Tất cả</option>
+      </select>
+    </div>
+    <div class="col-md-12 text-end">
+      <button class="btn btn-primary">Tìm</button>
+      <button type="button" id="resetDeviceAssignmentFilter" class="btn btn-secondary ms-2">Reset</button>
+      <button type="button" id="btnOpenCreateAssignmentModal" class="btn btn-success ms-2">➕ Gán thiết bị</button>
+    </div>
+  </form>
+
+  <!-- Bảng gán thiết bị -->
+  <table class="table table-bordered align-middle">
+    <thead>
+      <tr>
+        <th>Thiết bị</th>
+        <th>Phòng ban</th>
+        <th>Thời gian gán</th>
+        <th>Ghi chú</th>
+        <th>Thao tác</th>
+      </tr>
+    </thead>
+    <tbody id="deviceAssignmentTable"></tbody>
+  </table>
+</div>
+
+<!-- Modal tạo -->
+<div class="modal fade" id="createDeviceAssignmentModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <form id="createDeviceAssignmentForm" class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Gán thiết bị</h5></div>
+      <div class="modal-body">
+        <select id="createDeviceDropdown" class="form-select my-3" required></select>
+        <select id="createDeptDropdown" class="form-select my-3" required></select>
+        <input type="date" id="createStartDate" class="form-control my-3" required />
+        <textarea id="createNote" class="form-control" placeholder="Ghi chú (tuỳ chọn)"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-success">Gán</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal sửa -->
+<div class="modal fade" id="editDeviceAssignmentModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <form id="editDeviceAssignmentForm" class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Sửa lịch sử gán</h5></div>
+      <div class="modal-body">
+        <input type="hidden" id="editAssignmentId" />
+        <select id="editDeptDropdown" class="form-select my-3" required></select>
+        <input type="date" id="editStartDate" class="form-control my-3" required />
+        <input type="date" id="editEndDate" class="form-control my-3" />
+        <textarea id="editNote" class="form-control" placeholder="Ghi chú (tuỳ chọn)"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-warning">Lưu thay đổi</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/assignments.js"></script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Quản lý sửa chữa thiết bị</title>
+
+  <%- include('../partials/header') %>
+
+<div class="container mt-4">
+  <h2 class="mb-4">Quản lý sửa chữa thiết bị</h2>
+  <div id="repairAlertContainer" class="mb-3"></div>
+
+  <!-- Bộ lọc -->
+  <form id="filterRepairForm" class="row g-2 mb-3">
+    <div class="col-md-4"><input name="deviceKeyword" class="form-control" placeholder="Tìm thiết bị..." /></div>
+    <div class="col-md-4"><input name="hardwareKeyword" class="form-control" placeholder="Tìm phần cứng..." /></div>
+    <div class="col-md-4">
+      <select name="status" class="form-select">
+        <option value="opened">Mới tiếp nhận</option>
+        <option value="in-progress">Đang sửa</option>
+        <option value="completed">Hoàn tất</option>
+        <option value="canceled">Hủy bỏ</option>
+      </select>
+    </div>
+    <div class="col-md-12 text-end">
+      <button class="btn btn-primary">🔍 Tìm</button>
+      <button type="button" id="btnOpenCreateRepairModal" class="btn btn-success ms-2">➕ Tạo phiếu sửa</button>
+    </div>
+  </form>
+
+  <!-- Bảng danh sách -->
+  <table class="table table-bordered table-striped align-middle">
+    <thead>
+      <tr>
+        <th>Thiết bị</th>
+        <th>Loại</th>
+        <th>Phần cứng</th>
+        <th>Khoa phòng</th>
+        <th>Người gửi</th>
+        <th>Ngày hư</th>
+        <th>Người thực hiện</th>
+        <th>Ngày sửa</th>
+        <th>Trạng thái</th>
+        <th>Ghi chú</th>
+        <th>Thao tác</th>
+      </tr>
+    </thead>
+    <tbody id="repairTableBody"></tbody>
+  </table>
+</div>
+
+<!-- Modal tạo -->
+<div class="modal fade" id="repairCreateModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <form id="createRepairForm" class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Tạo phiếu sửa chữa</h5></div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label for="createRepairDeviceDropdown" class="form-label">Thiết bị</label>
+          <select id="createRepairDeviceDropdown" class="form-select mb-3" required></select>
+        </div>
+        <div class="mb-3">
+          <label for="createRepairHardwareDropdown" class="form-label">Phần cứng</label>
+          <select id="createRepairHardwareDropdown" class="form-select mb-3" multiple></select>
+        </div>
+        <div class="mb-3">
+          <label for="createRepairSenderText" class="form-label">Người gửi Thiết bị</label>
+          <input id="createRepairSenderText" class="form-control mb-3" />
+        </div>
+        <div class="mb-3">
+          <label for="repairBrokenDate" class="form-label">Ngày hư hỏng</label>
+          <input type="date" id="createRepairBrokenDate" class="form-control mb-3" required />
+        </div>
+        <div class="mb-3">
+          <label for="createRepairReceiverDropdown" class="form-label">Người nhận sửa chữa</label>
+          <input id="createRepairReceiverDropdown" class="form-control mb-3"/>
+        </div>
+        <div class="mb-3">
+          <label for="createRepairRepairDate" class="form-label">Ngày sửa chữa</label>
+          <input type="date" id="createRepairRepairDate" class="form-control mb-3" />
+        </div>
+        <div class="mb-3">
+          <label for="createRepairStatusDropdown" class="form-label">Trạng thái</label>
+          <select id="createRepairStatusDropdown" class="form-select mb-3" required>
+            <option value="opened">Mới tiếp nhận</option>
+            <option value="in-progress">Đang sửa</option>
+            <option value="completed">Hoàn tất</option>
+            <option value="canceled">Hủy bỏ</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label for="createRepairNote" class="form-label">Ghi chú</label>
+          <textarea id="createRepairNote" class="form-control" rows="3" placeholder="Ghi chú thêm (nếu có)"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-success">💾 Tạo</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal sửa -->
+<div class="modal fade" id="repairEditModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <form id="editRepairForm" class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Sửa phiếu sửa chữa</h5></div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label for="editRepairId" class="form-label">Thiết bị</label>
+          <input type="hidden" id="editRepairId" />
+          <input type="hidden" id="editRepairDeviceId" />
+          <input type="text" id="editRepairDeviceInfo" class="form-control mb-3" disabled />
+        </div>
+        <div class="mb-3">
+          <label for="editRepairHardwareDropdown" class="form-label">Phần cứng</label>
+          <select id="editRepairHardwareDropdown" class="form-select mb-3" multiple></select>
+        </div>
+        <div class="mb-3">
+          <label for="editRepairSenderText" class="form-label">Người gửi Thiết bị</label>
+          <input id="editRepairSenderText" class="form-control my-3" />
+        </div>
+        <div class="mb-3">
+          <label for="editRepairBrokenDate" class="form-label">Ngày hư hỏng</label>
+          <input type="date" id="editRepairBrokenDate" class="form-control mb-3" required />
+        </div>
+        <div class="mb-3">
+          <label for="editRepairReceiverDropdown" class="form-label">Người nhận sửa chữa</label>
+          <select id="editRepairReceiverDropdown" class="form-select my-3"></select>
+        </div>
+        <div class="mb-3">
+          <label for="editRepairRepairDate" class="form-label">Ngày sửa chữa</label>
+          <input type="date" id="editRepairRepairDate" class="form-control mb-3" />
+        </div>
+        <div class="mb-3">
+          <label for="editRepairStatusDropdown" class="form-label">Trạng thái</label>
+          <select id="editRepairStatusDropdown" class="form-select mb-3" required>
+            <option value="opened">Mới tiếp nhận</option>
+            <option value="in-progress">Đang sửa</option>
+            <option value="completed">Hoàn tất</option>
+            <option value="canceled">Hủy bỏ</option>
+          </select>
+        </div>
+        <textarea id="editRepairNote" class="form-control" rows="3" placeholder="Ghi chú thêm (nếu có)"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-warning">💾 Lưu</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/repairs.js"></script>
+</body>
+</html>

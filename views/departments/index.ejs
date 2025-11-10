@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Quản lý Phòng Ban</title>
+  
+  <%- include('../partials/header') %>
+
+  <script>
+    const Base_Path = "<%= basePath %>";
+  </script>
+
+  <div class="container mt-4">
+    <h2 class="mb-3">Phòng ban</h2>
+
+    <!-- 📢 Container cho thông báo Bootstrap -->
+    <div id="departmentAlertContainer" class="mb-3"></div>
+    <!-- 🔍 Form lọc -->
+    <form id="filterDepartmentForm" class="row g-2">
+      <div class="col-6 col-md-3"><input name="code" class="form-control" placeholder="Mã phòng ban"></div>
+      <div class="col-6 col-md-3"><input name="name" class="form-control" placeholder="Tên phòng ban"></div>
+      <div class="col-6 col-md-3"><input name="note" class="form-control" placeholder="Ghi chú"></div>
+      <div class="col-6 col-md-3">
+        <select name="filter" class="form-select">
+          <option value="all">Tất cả</option>
+          <option value="active">Hoạt động</option>
+          <option value="inactive">Tạm ngưng</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-12 text-end">
+        <button class="btn btn-success">🔍 Tìm kiếm</button>
+        <button type="button" id="resetDepartmentBtn" class="btn btn-secondary ms-2">🔄 Reset</button>
+        <button type="button" class="btn btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#departmentModal">➕ Thêm</button>
+      </div>
+    </form>
+
+    <!-- 📋 Bảng danh sách -->
+    <div id="departmentTable" class="table-responsive mt-4"></div>
+
+    <!-- 📍 Phân trang -->
+    <div id="departmentPagination" class="mt-3 text-center"></div>
+  </div>
+
+  <!-- ✨ Modal thêm phòng ban -->
+  <div class="modal fade" id="departmentModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <form id="createDepartmentForm" class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Thêm Phòng ban</h5></div>
+        <div class="modal-body">
+          <input name="code" class="form-control mb-2" placeholder="Mã phòng ban" required>
+          <input name="name" class="form-control mb-2" placeholder="Tên phòng ban" required>
+          <input name="note" class="form-control mb-2" placeholder="Ghi chú">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary">Lưu</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/departments.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
