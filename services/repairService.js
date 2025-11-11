@@ -1,213 +1,145 @@
 import { poolPromise } from '../db/db.js';
 import sql from 'mssql';
 
+/**
+ * Lấy danh sách phiếu sửa chữa có lọc.
+ * Sử dụng SP: sp_Repairs_GetAll
+ */
 export async function getRepairs(filters = {}) {
-  const pool = await poolPromise;
-  const request = pool.request();
+    const pool = await poolPromise;
+    const request = pool.request();
 
-  const allowedStatus = ['opened', 'in-progress', 'completed', 'canceled'];
-  const status = allowedStatus.includes(filters.status) ? filters.status : null;
+    const allowedStatus = ['opened', 'in-progress', 'completed', 'canceled'];
+    const status = allowedStatus.includes(filters.status) ? filters.status : null;
 
-  if (filters.deviceKeyword)
-    request.input('deviceKeyword', sql.NVarChar(100), `%${filters.deviceKeyword}%`);
-  if (filters.hardwareKeyword)
-    request.input('hardwareKeyword', sql.NVarChar(100), `%${filters.hardwareKeyword}%`);
-  if (status)
-    request.input('status', sql.VarChar(20), status);
+    const deviceKeyword = filters.deviceKeyword ? filters.deviceKeyword : null;
+    const hardwareKeyword = filters.hardwareKeyword ? filters.hardwareKeyword : null;
 
-  const result = await request.query(`
-    SELECT R.id, R.brokenDate, R.repairDate, R.status, R.note,
-           D.id AS deviceId, D.code AS deviceCode, D.name AS deviceName,
-           DT.name AS deviceType,
-           DA.deptId, DP.name AS deptName,
-           HU.id AS hardwareUnitId, HU.code AS hardwareCode, HU.serialNumber,
-           H.name AS hardwareName,
-           --U1.id AS senderId, U1.name AS senderName,
-           R.userCreateName AS senderName,
-           U2.id AS receiverId, U2.name AS receiverName
-    FROM Repairs R
-    JOIN Devices D ON D.id = R.deviceId AND D.isInactive = 0
-    LEFT JOIN DeviceTypes DT ON DT.id = D.deviceTypeId
-    LEFT JOIN DeviceAssignments DA ON DA.deviceId = D.id AND DA.isInactive = 0 AND DA.endDate IS NULL
-    LEFT JOIN Departments DP ON DP.id = DA.deptId
-    LEFT JOIN HardwareUnits HU ON HU.id = R.hardwareUnitId
-    LEFT JOIN Hardwares H ON H.id = HU.hardwareId
-    --LEFT JOIN Users U1 ON U1.id = R.userCreateId AND U1.isInactive = 0
-    LEFT JOIN Users U2 ON U2.id = R.userResolveId AND U2.isInactive = 0
-    WHERE 1=1
-      ${status ? 'AND R.status = @status' : ''}
-      ${filters.deviceKeyword ? 'AND (D.name LIKE @deviceKeyword OR D.code LIKE @deviceKeyword)' : ''}
-      ${filters.hardwareKeyword ? 'AND (HU.serialNumber LIKE @hardwareKeyword OR HU.code LIKE @hardwareKeyword)' : ''}
-    ORDER BY R.brokenDate DESC
-  `);
+    const result = await request
+        .input('pDeviceKeyword', sql.NVarChar(100), deviceKeyword ? `%${deviceKeyword}%` : null)
+        .input('pHardwareKeyword', sql.NVarChar(100), hardwareKeyword ? `%${hardwareKeyword}%` : null)
+        .input('pStatus', sql.VarChar(20), status)
+        .execute('sp_Repairs_GetAll');
 
-  return result.recordset;
+    // SP này chỉ trả về 1 tập hợp kết quả
+    return result.recordset;
 }
 
+/**
+ * Lấy chi tiết phiếu sửa chữa theo ID.
+ * Sử dụng SP: sp_Repairs_GetById
+ */
 export async function getRepairById(id) {
-  const pool = await poolPromise;
-  const result = await pool.request()
-    .input('id', sql.Int, id)
-    .query(`SELECT R.*, D.code AS deviceCode, D.name AS deviceName
-            FROM Repairs R
-            JOIN Devices D ON D.id = R.deviceId
-            WHERE R.id = @id
-            `);
-  return result.recordset[0];
+    const pool = await poolPromise;
+    const result = await pool.request()
+        .input('pId', sql.Int, id)
+        .execute('sp_Repairs_GetById');
+        
+    return result.recordset[0];
 }
 
+/**
+ * Tạo mới phiếu sửa chữa.
+ * Duy trì logic lặp qua mảng hardwareUnitIds ở tầng Service.
+ * Sử dụng SP: sp_Repairs_Create
+ */
 export async function createRepair(data) {
-  const pool = await poolPromise;
+    const pool = await poolPromise;
 
-  for (const hwId of data.hardwareUnitIds || [null]) {
-    await pool.request()
-      .input('deviceId', sql.Int, data.deviceId)
-      .input('hardwareUnitId', sql.Int, hwId || null)
-      .input('brokenDate', sql.DateTime, data.brokenDate)
-      .input('repairDate', sql.DateTime, data.repairDate || null)
-      .input('status', sql.VarChar(20), data.status || 'opened')
-      .input('note', sql.NVarChar(200), data.note || '')
-      .input('userCreateName', sql.NVarChar(100), data.userCreateName || null)
-      .input('userResolveId', sql.Int, data.userResolveId || null)
-      .query(`
-        INSERT INTO Repairs(deviceId, hardwareUnitId, brokenDate, repairDate, status, note, userCreateName, userResolveId, isInactive)
-        VALUES (@deviceId, @hardwareUnitId, @brokenDate, @repairDate, @status, @note, @userCreateName, @userResolveId, 0)
-      `);
-  }
+    for (const hwId of data.hardwareUnitIds || [null]) {
+        await pool.request()
+            .input('pDeviceId', sql.Int, data.deviceId)
+            .input('pHardwareUnitId', sql.Int, hwId || null)
+            .input('pBrokenDate', sql.DateTime, data.brokenDate ? new Date(data.brokenDate) : null)
+            .input('pRepairDate', sql.DateTime, data.repairDate ? new Date(data.repairDate) : null)
+            .input('pStatus', sql.VarChar(20), data.status || 'opened')
+            .input('pNote', sql.NVarChar(200), data.note || '')
+            .input('pUserCreateName', sql.NVarChar(100), data.userCreateName || null)
+            .input('pUserResolveId', sql.Int, data.userResolveId || null)
+            .execute('sp_Repairs_Create');
+    }
 }
 
+/**
+ * Cập nhật phiếu sửa chữa.
+ * Sử dụng SP: sp_Repairs_Update
+ */
 export async function updateRepair(id, data) {
-  const pool = await poolPromise;
-  await pool.request()
-    .input('id', sql.Int, id)
-    .input('deviceId', sql.Int, data.deviceId)
-    .input('hardwareUnitId', sql.Int, data.hardwareUnitId || null)
-    .input('brokenDate', sql.DateTime, data.brokenDate)
-    .input('repairDate', sql.DateTime, data.repairDate || null)
-    .input('status', sql.VarChar(20), data.status)
-    .input('note', sql.NVarChar(200), data.note || '')
-    .input('userCreateName', sql.NVarChar(100), data.userCreateName || null)
-    .input('userResolveId', sql.Int, data.userResolveId || null)
-    .query(`
-      UPDATE Repairs
-      SET deviceId = @deviceId,
-          hardwareUnitId = @hardwareUnitId,
-          brokenDate = @brokenDate,
-          repairDate = @repairDate,
-          status = @status,
-          note = @note,
-          userCreateName  = @userCreateName,
-          userResolveId = @userResolveId
-      WHERE id = @id
-    `);
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pId', sql.Int, id)
+        .input('pDeviceId', sql.Int, data.deviceId)
+        .input('pHardwareUnitId', sql.Int, data.hardwareUnitId || null)
+        .input('pBrokenDate', sql.DateTime, data.brokenDate ? new Date(data.brokenDate) : null)
+        .input('pRepairDate', sql.DateTime, data.repairDate ? new Date(data.repairDate) : null)
+        .input('pStatus', sql.VarChar(20), data.status)
+        .input('pNote', sql.NVarChar(200), data.note || '')
+        .input('pUserCreateName', sql.NVarChar(100), data.userCreateName || null)
+        .input('pUserResolveId', sql.Int, data.userResolveId || null)
+        .execute('sp_Repairs_Update');
 }
 
+/**
+ * Xóa phiếu sửa chữa.
+ * Sử dụng SP: sp_Repairs_Delete
+ */
 export async function deleteRepair(id) {
-  const pool = await poolPromise;
-  await pool.request().input('id', sql.Int, id).query(`
-    DELETE FROM Repairs WHERE id = @id
-  `);
+    const pool = await poolPromise;
+    await pool.request().input('pId', sql.Int, id).execute('sp_Repairs_Delete');
 }
 
+/**
+ * Lấy danh sách thiết bị có thể sửa chữa.
+ * Sử dụng SP: sp_Repairs_GetAvailableDevices
+ */
 export async function getAvailableDevicesForRepair() {
-  const pool = await poolPromise;
-  const result = await pool.request().query(`
-    SELECT D.id, D.code, D.name, DT.name AS deviceType
-    FROM Devices D
-    JOIN DeviceTypes DT ON DT.id = D.deviceTypeId
-    WHERE D.isInactive = 0
-    AND (
-        NOT EXISTS (
-        SELECT 1
-        FROM Devices_HardwareUnits DH
-        WHERE DH.deviceId = D.id AND DH.isInactive = 0
-        )
-        OR EXISTS (
-        SELECT 1
-        FROM Devices_HardwareUnits DH
-        LEFT JOIN Repairs R ON R.hardwareUnitId = DH.hardwareUnitId AND R.status IN ('opened', 'in-progress')
-        WHERE DH.deviceId = D.id AND DH.isInactive = 0
-            AND R.id IS NULL
-        )
-    )
-    ORDER BY D.name
-  `);
-  return result.recordset;
+    const pool = await poolPromise;
+    const result = await pool.request().execute('sp_Repairs_GetAvailableDevices');
+    return result.recordset;
 }
 
-export async function getAvailableHardwareUnitsForRepair(deviceId, currentRepairId = null) {
-  const pool = await poolPromise;
-  const request = pool.request()
-    .input('deviceId', sql.Int, deviceId)
-    .input('currentRepairId', sql.Int, currentRepairId || 0);
-
-  const result = await request.query(`
-    SELECT HU.id, HU.code, HU.serialNumber, H.name AS hardwareName,
-           CASE
-             WHEN R.id IS NOT NULL AND R.id != @currentRepairId THEN 1
-             ELSE 0
-           END AS isLocked
-    FROM Devices_HardwareUnits DH
-    JOIN HardwareUnits HU ON HU.id = DH.hardwareUnitId
-    JOIN Hardwares H ON H.id = HU.hardwareId
-    LEFT JOIN Repairs R ON R.hardwareUnitId = HU.id AND R.status IN ('opened', 'in-progress')
-    WHERE DH.deviceId = @deviceId AND DH.isInactive = 0
-    ORDER BY HU.id DESC
-  `);
-
-  return result.recordset;
-}
-
+/**
+ * Lấy danh sách người dùng hoạt động (Users).
+ * Sử dụng SP: sp_Repairs_GetActiveUsers
+ */
 export async function getActiveUsers() {
-  const pool = await poolPromise;
-  const result = await pool.request().query(`
-    SELECT U.id, U.code, U.name, DP.name AS deptName
-    FROM Users U
-    LEFT JOIN Departments DP ON DP.id = U.deptId
-    WHERE U.isInactive = 0
-    ORDER BY U.name
-  `);
-  return result.recordset;
+    const pool = await poolPromise;
+    const result = await pool.request().execute('sp_Repairs_GetActiveUsers');
+    return result.recordset;
 }
 
+/**
+ * Lấy danh sách linh kiện của thiết bị (khi TẠO phiếu sửa chữa).
+ * Loại trừ các linh kiện đang có phiếu 'opened' hoặc 'in-progress'.
+ * Sử dụng SP: sp_Repairs_GetHardwareUnitsForCreate
+ */
 export async function getHardwareUnitsForCreate(deviceId) {
-  const pool = await poolPromise;
-  const result = await pool.request()
-    .input('deviceId', sql.Int, deviceId)
-    .query(`
-      SELECT HU.id, HU.code, HU.serialNumber, H.name AS hardwareName
-      FROM Devices_HardwareUnits DH
-      JOIN HardwareUnits HU ON HU.id = DH.hardwareUnitId
-      JOIN Hardwares H ON H.id = HU.hardwareId
-      WHERE DH.deviceId = @deviceId AND DH.isInactive = 0
-        AND HU.id NOT IN (
-          SELECT hardwareUnitId FROM Repairs
-          WHERE status IN ('opened', 'in-progress') AND hardwareUnitId IS NOT NULL
-        )
-      ORDER BY HU.id DESC
-    `);
-  return result.recordset;
+    const pool = await poolPromise;
+    const result = await pool.request()
+        .input('pDeviceId', sql.Int, deviceId)
+        .execute('sp_Repairs_GetHardwareUnitsForCreate');
+    return result.recordset;
 }
 
+/**
+ * Lấy danh sách linh kiện của thiết bị (khi CHỈNH SỬA phiếu sửa chữa).
+ * Xác định linh kiện nào bị khóa bởi phiếu khác.
+ * Sử dụng SP: sp_Repairs_GetHardwareUnitsForEdit
+ */
 export async function getHardwareUnitsForEdit(deviceId, currentRepairId) {
-  const pool = await poolPromise;
-  const result = await pool.request()
-    .input('deviceId', sql.Int, deviceId)
-    .input('currentRepairId', sql.Int, currentRepairId)
-    .query(`
-      SELECT HU.id, HU.code, HU.serialNumber, H.name AS hardwareName,
-             CASE
-               WHEN EXISTS (
-                 SELECT 1 FROM Repairs R
-                 WHERE R.hardwareUnitId = HU.id AND R.status IN ('opened', 'in-progress') AND R.id != @currentRepairId
-               )
-               THEN 1 ELSE 0
-             END AS isLocked
-      FROM Devices_HardwareUnits DH
-      JOIN HardwareUnits HU ON HU.id = DH.hardwareUnitId
-      JOIN Hardwares H ON H.id = HU.hardwareId
-      WHERE DH.deviceId = @deviceId AND DH.isInactive = 0
-      ORDER BY HU.id DESC
-    `);
-  return result.recordset;
+    const pool = await poolPromise;
+    const result = await pool.request()
+        .input('pDeviceId', sql.Int, deviceId)
+        .input('pCurrentRepairId', sql.Int, currentRepairId)
+        .execute('sp_Repairs_GetHardwareUnitsForEdit');
+    return result.recordset;
+}
+
+/**
+ * Loại bỏ hàm getAvailableHardwareUnitsForRepair cũ do đã được thay thế bằng getHardwareUnitsForCreate/getHardwareUnitsForEdit
+ * Export hàm placeholder để tránh lỗi nếu có nơi gọi đến.
+ */
+export async function getAvailableHardwareUnitsForRepair(deviceId, currentRepairId = null) {
+    console.warn("Function getAvailableHardwareUnitsForRepair is deprecated. Use getHardwareUnitsForEdit instead.");
+    return getHardwareUnitsForEdit(deviceId, currentRepairId);
 }

@@ -1,109 +1,115 @@
 import { poolPromise } from '../db/db.js';
 import sql from 'mssql';
-import { canDeleteRecord } from '../utils/deletionGuard.js';
+import { canDeleteRecord } from '../utils/deletionGuard.js'; // Giữ lại hàm này
 import sanitizeFilters from '../utils/sanitizeFilters.js';
 
+/**
+ * Lấy danh sách thiết bị (có phân trang và lọc).
+ * Tên SP: sp_Devices_GetPaged
+ */
 export async function getDevices(filtersRaw) {
-  const filters = sanitizeFilters(filtersRaw);
-  const page = Number(filters.page) > 0 ? parseInt(filters.page) : 1;
-  const limit = Number(filters.limit) > 0 ? parseInt(filters.limit) : 10;
-  const offset = (page - 1) * limit;
+    const filters = sanitizeFilters(filtersRaw);
+    const page = Number(filters.page) > 0 ? parseInt(filters.page) : 1;
+    const limit = Number(filters.limit) > 0 ? parseInt(filters.limit) : 10;
+    const offset = (page - 1) * limit;
 
-  const pool = await poolPromise;
-  const request = pool.request();
+    // Xác định trạng thái lọc (active, inactive, all)
+    const filterStatus = filters.filter === 'active' || filters.filter === 'inactive'
+        ? filters.filter 
+        : 'all';
 
-  // Gán biến chống SQL injection
-  request.input('offset', sql.Int, offset);
-  request.input('limit', sql.Int, limit);
+    const pool = await poolPromise;
+    const request = pool.request()
+        .input('pOffset', sql.Int, offset)
+        .input('pLimit', sql.Int, limit)
+        .input('pFilterStatus', sql.VarChar(10), filterStatus)
+        // Lọc chuỗi (LIKE): thêm % và truyền vào SP. Nếu không có giá trị, truyền null
+        .input('pCode', sql.VarChar(50), filters.code ? `%${filters.code}%` : null)
+        .input('pName', sql.NVarChar(100), filters.name ? `%${filters.name}%` : null)
+        // Lọc số/ngày: truyền giá trị trực tiếp hoặc null
+        .input('pDeviceTypeId', sql.Int, filters.deviceTypeId || null)
+        .input('pStartDate', sql.Date, filters.startDate || null)
+        .input('pEndDate', sql.Date, filters.endDate || null);
 
-  if (filters.code) request.input('code', sql.VarChar(50), `%${filters.code}%`);
-  if (filters.name) request.input('name', sql.NVarChar(100), `%${filters.name}%`);
-  if (filters.deviceTypeId) request.input('deviceTypeId', sql.Int, filters.deviceTypeId);
-  if (filters.startDate) request.input('startDate', sql.Date, filters.startDate);
-  if (filters.endDate) request.input('endDate', sql.Date, filters.endDate);
+    const result = await request.execute('sp_Devices_GetPaged'); 
 
-  let whereClause = 'WHERE 1=1';
-  if (filters.filter === 'active') whereClause += ' AND D.isInactive = 0';
-  if (filters.filter === 'inactive') whereClause += ' AND D.isInactive = 1';
-  if (filters.code) whereClause += ' AND D.code LIKE @code';
-  if (filters.name) whereClause += ' AND D.name LIKE @name';
-  if (filters.deviceTypeId) whereClause += ' AND D.deviceTypeId = @deviceTypeId';
-  if (filters.startDate) whereClause += ' AND D.purchaseDate >= @startDate';
-  if (filters.endDate) whereClause += ' AND D.purchaseDate <= @endDate';
+    // SP này trả về hai recordset: [0] là total, [1] là data
+    const total = result.recordsets[0][0].total;
+    const devices = result.recordsets[1];
 
-  const totalResult = await request.query(`
-    SELECT COUNT(*) AS total
-    FROM Devices D ${whereClause}
-  `);
-  const total = totalResult.recordset[0].total;
-
-  const result = await request.query(`
-    SELECT D.*, DT.name AS deviceTypeName
-    FROM Devices D
-    LEFT JOIN DeviceTypes DT ON D.deviceTypeId = DT.id
-    ${whereClause}
-    ORDER BY D.id DESC
-    OFFSET @offset ROWS
-    FETCH NEXT @limit ROWS ONLY
-  `);
-
-  return { devices: result.recordset, total };
+    return { devices, total };
 }
 
+/**
+ * Tạo thiết bị mới.
+ * Tên SP: sp_Devices_Create
+ */
 export async function createDeviceService({ code, name, deviceTypeId, purchaseDate, note }) {
-  const pool = await poolPromise;
-  await pool.request()
-    .input('code', code)
-    .input('name', name)
-    .input('deviceTypeId', deviceTypeId)
-    .input('purchaseDate', purchaseDate)
-    .input('note', note)
-    .query(`
-      INSERT INTO Devices (code, name, deviceTypeId, purchaseDate, note)
-      VALUES (@code, @name, @deviceTypeId, @purchaseDate, @note)
-    `);
+    const pool = await poolPromise;
+    const result = await pool.request()
+        .input('pCode', sql.VarChar(50), code)
+        .input('pName', sql.NVarChar(100), name)
+        .input('pDeviceTypeId', sql.Int, deviceTypeId)
+        .input('pPurchaseDate', sql.Date, purchaseDate)
+        .input('pNote', sql.NVarChar(sql.MAX), note)
+        .execute('sp_Devices_Create');
+
+    return result.recordset[0].newId;
 }
 
+/**
+ * Cập nhật thiết bị.
+ * Tên SP: sp_Devices_Update
+ */
 export async function updateDeviceService(id, { code, name, deviceTypeId, purchaseDate, note }) {
-  const pool = await poolPromise;
-  await pool.request()
-    .input('id', id)
-    .input('code', code)
-    .input('name', name)
-    .input('deviceTypeId', deviceTypeId)
-    .input('purchaseDate', purchaseDate)
-    .input('note', note)
-    .query(`UPDATE Devices SET 
-                code = @code, 
-                name = @name, 
-                deviceTypeId = @deviceTypeId,
-                purchaseDate = @purchaseDate, 
-                note = @note 
-            WHERE id = @id`);
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pId', sql.Int, id)
+        .input('pCode', sql.VarChar(50), code)
+        .input('pName', sql.NVarChar(100), name)
+        .input('pDeviceTypeId', sql.Int, deviceTypeId)
+        .input('pPurchaseDate', sql.Date, purchaseDate)
+        .input('pNote', sql.NVarChar(sql.MAX), note)
+        .execute('sp_Devices_Update');
 }
 
+/**
+ * Bật/Tắt trạng thái thiết bị.
+ * Tên SP: sp_Devices_ToggleInactive
+ */
 export async function toggleDeviceService(id) {
-  const pool = await poolPromise;
-  await pool.request()
-    .input('id', id)
-    .query('UPDATE Devices SET isInactive = IIF(isInactive = 0, 1, 0) WHERE id = @id');
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pId', sql.Int, id)
+        .execute('sp_Devices_ToggleInactive');
 }
 
+/**
+ * Xóa thiết bị.
+ * Tên SP: sp_Devices_Delete
+ * Lưu ý: Giữ lại logic kiểm tra ràng buộc (canDeleteRecord) ở tầng Service.
+ */
 export async function deleteDeviceService(id) {
-  const pool = await poolPromise;
-  const rules = [
-    { table: 'DeviceAssignments', field: 'deviceId' },
-    { table: 'Repairs', field: 'deviceId' },
-    { table: 'Devices_HardwareUnits', field: 'deviceId' }
-  ];
-  const canDelete = await canDeleteRecord(id, rules);
-  if (!canDelete) throw new Error('Không thể xóa – thiết bị đang được sử dụng hoặc đã được gán phần cứng');
-  await pool.request().input('id', id).query('DELETE FROM Devices WHERE id = @id');
+    const pool = await poolPromise;
+    const rules = [
+        { table: 'DeviceAssignments', field: 'deviceId' },
+        { table: 'Repairs', field: 'deviceId' },
+        { table: 'DeviceHardwareUnits', field: 'deviceId' }
+    ];
+    // Giữ logic kiểm tra ràng buộc ở đây, chỉ gọi SP khi an toàn để xóa
+    const canDelete = await canDeleteRecord(id, rules);
+    if (!canDelete) throw new Error('Không thể xóa – thiết bị đang được sử dụng hoặc đã được gán phần cứng');
+    
+    await pool.request().input('pId', sql.Int, id).execute('sp_Devices_Delete');
 }
 
+/**
+ * Lấy danh sách loại thiết bị (Dropdown).
+ * Tên SP: sp_DeviceTypes_GetDropdown
+ */
 export async function getDeviceTypesDropdown() {
-  const pool = await poolPromise;
-  const result = await pool.request()
-    .query('SELECT id, name FROM DeviceTypes WHERE isInactive = 0');
-  return result.recordset;
+    const pool = await poolPromise;
+    const result = await pool.request()
+        .execute('sp_DeviceTypes_GetDropdown');
+    return result.recordset;
 }

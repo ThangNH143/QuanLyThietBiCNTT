@@ -15,7 +15,7 @@ module.exports = {
       "App_Base_Path": "/QuanLyThietBiCNTT",
       
       // CẤU HÌNH DB MỚI (KHÔNG CẦN BACKSLASH)
-      "DB_HOST": "localhost",// Tên server (hoặc IP)
+      "DB_HOST": "192.168.1.140",// Tên server (hoặc IP)
       "DB_PORT": "1433",// THAY THẾ bằng port Tĩnh hoặc Động bạn tìm thấy
       "DB_USER": "sa",
       "DB_PASSWORD": "Cntt!p@ss",

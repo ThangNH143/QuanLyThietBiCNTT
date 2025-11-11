@@ -1,178 +1,138 @@
 import { poolPromise } from '../db/db.js';
 import sql from 'mssql';
 
+/**
+ * Lấy danh sách các thiết bị cùng với phần cứng đã gán (bao gồm lọc và nhóm dữ liệu).
+ * Sử dụng SP: sp_DeviceHardwareUnits_GetDevicesWithHardware
+ */
 export async function getDevicesWithHardware(filters = {}) {
-  const pool = await poolPromise;
-  const request = pool.request();
+    const pool = await poolPromise;
+    const request = pool.request();
 
-  if (filters.deviceName)
-    request.input('deviceName', sql.NVarChar(100), `%${filters.deviceName}%`);
-  if (filters.hardwareKeyword)
-    request.input('hardwareKeyword', sql.NVarChar(100), `%${filters.hardwareKeyword}%`);
+    // Chuẩn bị tham số cho SP (sử dụng LIKE %...% hoặc NULL)
+    const deviceNameParam = filters.deviceName ? `%${filters.deviceName}%` : null;
+    const hardwareKeywordParam = filters.hardwareKeyword ? `%${filters.hardwareKeyword}%` : null;
 
-  let where = '';
-  if (filters.deviceName) where += ' AND D.name LIKE @deviceName';
-  if (filters.hardwareKeyword)
-    where += ' AND (H.name LIKE @hardwareKeyword OR HU.serialNumber LIKE @hardwareKeyword)';
+    const result = await request
+        .input('pDeviceName', sql.NVarChar(100), deviceNameParam)
+        .input('pHardwareKeyword', sql.NVarChar(100), hardwareKeywordParam)
+        .execute('sp_DeviceHardwareUnits_GetDevicesWithHardware');
 
-  const result = await request.query(`
-    SELECT 
-      D.id AS deviceId, 
-      D.code as deviceCode, 
-      D.name AS deviceName, 
-      DT.name as deviceType,
-      HU.id AS hwId, 
-      H.name AS hardwareName, 
-      HU.serialNumber, 
-      CASE WHEN R.status NOT IN ('completed', 'canceled') THEN 1 ELSE 0 END AS isUnderRepair
-    FROM Devices D
-    LEFT JOIN DeviceTypes DT ON DT.id = D.deviceTypeId
-    JOIN Devices_HardwareUnits DH ON DH.deviceId = D.id AND DH.isInactive = 0
-    LEFT JOIN HardwareUnits HU ON HU.id = DH.hardwareUnitId
-    LEFT JOIN Hardwares H ON H.id = HU.hardwareId
-    LEFT JOIN Repairs R ON R.hardwareUnitId = HU.id
-    WHERE 1=1 ${where}
-    ORDER BY D.id, HU.id
-  `);
+    // Chú ý: Dữ liệu được trả về DANG PHẲNG từ SQL, cần Grouping ở tầng Node.js
+    const grouped = [];
 
-  const grouped = [];
-
-  for (const row of result.recordset) {
-    let group = grouped.find(g => g.deviceId === row.deviceId);
-    if (!group) {
-      group = {
-        deviceId: row.deviceId,
-        deviceCode: row.deviceCode,
-        deviceName: row.deviceName,
-        deviceType: row.deviceType,
-        hardwareUnits: []
-      };
-      grouped.push(group);
+    for (const row of result.recordset) {
+        let group = grouped.find(g => g.deviceId === row.deviceId);
+        
+        if (!group) {
+            // Tạo nhóm mới nếu chưa tồn tại
+            group = {
+                deviceId: row.deviceId,
+                deviceCode: row.deviceCode,
+                deviceName: row.deviceName,
+                deviceType: row.deviceType,
+                hardwareUnits: []
+            };
+            grouped.push(group);
+        }
+        
+        // Thêm đơn vị phần cứng vào nhóm
+        if (row.hwId) {
+            group.hardwareUnits.push({
+                id: row.hwId,
+                hardwareName: row.hardwareName,
+                serialNumber: row.serialNumber,
+                isUnderRepair: row.isUnderRepair === 1
+            });
+        }
     }
-    if (row.hwId) {
-      group.hardwareUnits.push({
-        id: row.hwId,
-        hardwareName: row.hardwareName,
-        serialNumber: row.serialNumber,
-        isUnderRepair: row.isUnderRepair === 1
-      });
-    }
-  }
 
-  return grouped;
+    return grouped;
 }
 
+/**
+ * Lấy danh sách thiết bị chưa được gán phần cứng (cho chức năng Create).
+ * Sử dụng SP: sp_DeviceHardwareUnits_GetDevicesWithoutHardware
+ */
 export async function getDevicesWithoutHardware(includeId = null) {
-  const pool = await poolPromise;
-  const request = pool.request();
+    const pool = await poolPromise;
+    const result = await pool.request()
+        .input('pIncludeId', sql.Int, includeId || null)
+        .execute('sp_DeviceHardwareUnits_GetDevicesWithoutHardware');
 
-  // Nếu có includeId thì truyền, nếu không thì gán NULL rõ ràng
-  request.input('includeId', sql.Int, includeId || null);
-
-  const result = await request.query(`
-    SELECT D.id, D.code, D.name, DT.name as deviceType
-    FROM Devices D
-    LEFT JOIN DeviceTypes DT ON DT.id = D.deviceTypeId
-    WHERE D.isInactive = 0
-      AND (
-        (
-          NOT EXISTS (
-            SELECT 1 FROM Devices_HardwareUnits DH
-            WHERE DH.deviceId = D.id AND DH.isInactive = 0
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM Repairs R
-            WHERE R.deviceId = D.id AND R.status NOT IN ('completed', 'canceled')
-          )
-        )
-        OR (@includeId IS NOT NULL AND D.id = @includeId)
-      )
-    ORDER BY D.name
-  `);
-  return result.recordset;
+    return result.recordset;
 }
 
+/**
+ * Lấy danh sách các đơn vị phần cứng có thể gán (chưa được gán cho thiết bị nào).
+ * Sử dụng SP: sp_DeviceHardwareUnits_GetForCreate
+ */
 export async function getHardwareUnitsForCreate() {
-  const pool = await poolPromise;
-  const result = await pool.request().query(`
-    SELECT HU.id, H.name AS hardwareName, HU.serialNumber,
-      CASE WHEN R.status NOT IN ('completed', 'canceled') THEN 1 ELSE 0 END AS isUnderRepair
-    FROM HardwareUnits HU
-    JOIN Hardwares H ON H.id = HU.hardwareId
-    LEFT JOIN Repairs R ON R.hardwareUnitId = HU.id
-    WHERE HU.isInactive = 0
-      AND HU.id NOT IN (
-        SELECT hardwareUnitId FROM Devices_HardwareUnits WHERE isInactive = 0
-      )
-    ORDER BY HU.id DESC
-  `);
-  return result.recordset;
+    const pool = await poolPromise;
+    const result = await pool.request()
+        .execute('sp_DeviceHardwareUnits_GetForCreate');
+    
+    return result.recordset;
 }
 
+/**
+ * Lấy danh sách các đơn vị phần cứng cho chức năng Edit (cho phép bao gồm các ID đã gán cho thiết bị hiện tại).
+ * Sử dụng SP: sp_DeviceHardwareUnits_GetForEdit
+ */
 export async function getHardwareUnitsForEdit(deviceId, includeIds = []) {
-  const pool = await poolPromise;
-  const request = pool.request();
-  request.input('deviceId', sql.Int, deviceId);
-  if (includeIds.length > 0)
-    request.input('includeIds', sql.VarChar(200), includeIds.join(','));
+    const pool = await poolPromise;
+    
+    // Chuyển mảng ID thành chuỗi '1,5,10' để truyền vào SP
+    // Nếu mảng rỗng, truyền NULL
+    const includeIdsString = includeIds.length > 0 ? includeIds.join(',') : null;
+    
+    const result = await pool.request()
+        .input('pDeviceId', sql.Int, deviceId)
+        .input('pIncludeIds', sql.VarChar(sql.MAX), includeIdsString)
+        .execute('sp_DeviceHardwareUnits_GetForEdit');
 
-  const result = await request.query(`
-    SELECT HU.id, H.name AS hardwareName, HU.serialNumber,
-      CASE WHEN R.status NOT IN ('completed', 'canceled') THEN 1 ELSE 0 END AS isUnderRepair
-    FROM HardwareUnits HU
-    JOIN Hardwares H ON H.id = HU.hardwareId
-    LEFT JOIN Repairs R ON R.hardwareUnitId = HU.id
-    WHERE HU.isInactive = 0
-      AND (
-        HU.id NOT IN (
-          SELECT hardwareUnitId FROM Devices_HardwareUnits 
-          WHERE isInactive = 0 AND deviceId != @deviceId
-        )
-        OR HU.id IN (SELECT value FROM STRING_SPLIT(@includeIds, ','))
-      )
-    ORDER BY HU.id DESC
-  `);
-
-  return result.recordset;
+    return result.recordset;
 }
 
+/**
+ * Lấy danh sách các đơn vị phần cứng ĐÃ GÁN cho một thiết bị cụ thể.
+ * Sử dụng SP: sp_DeviceHardwareUnits_GetAssigned
+ */
 export async function getDeviceHardwareAssigned(deviceId) {
-  const pool = await poolPromise;
-  const result = await pool.request()
-    .input('deviceId', sql.Int, deviceId)
-    .query(`
-      SELECT HU.id, H.name AS hardwareName, HU.serialNumber
-      FROM Devices_HardwareUnits DH
-      JOIN HardwareUnits HU ON HU.id = DH.hardwareUnitId
-      JOIN Hardwares H ON H.id = HU.hardwareId
-      WHERE DH.deviceId = @deviceId AND DH.isInactive = 0
-    `);
-  return { assigned: result.recordset };
+    const pool = await poolPromise;
+    const result = await pool.request()
+        .input('pDeviceId', sql.Int, deviceId)
+        .execute('sp_DeviceHardwareUnits_GetAssigned');
+        
+    // Trả về { assigned: [...] } để giữ nguyên cấu trúc cũ của hàm này
+    return { assigned: result.recordset };
 }
 
+/**
+ * Cập nhật danh sách các đơn vị phần cứng được gán cho một thiết bị (DELETE cũ, INSERT mới - trong Transaction).
+ * Sử dụng SP: sp_DeviceHardwareUnits_UpdateAssigned
+ */
 export async function updateDeviceHardwareAssigned(deviceId, hardwareUnitIds = []) {
-  const pool = await poolPromise;
-  await pool.request().input('deviceId', sql.Int, deviceId).query(`
-    DELETE FROM Devices_HardwareUnits WHERE deviceId = @deviceId
-  `);
-  for (const id of hardwareUnitIds) {
+    const pool = await poolPromise;
+    
+    // Chuyển mảng ID thành chuỗi '1,5,10' để truyền vào SP
+    // Nếu mảng rỗng, truyền NULL để SP chỉ thực hiện DELETE
+    const hardwareUnitIdsString = hardwareUnitIds.length > 0 ? hardwareUnitIds.join(',') : null;
+
     await pool.request()
-      .input('deviceId', sql.Int, deviceId)
-      .input('hardwareUnitId', sql.Int, parseInt(id))
-      .query(`
-        INSERT INTO Devices_HardwareUnits(deviceId, hardwareUnitId, isInactive)
-        VALUES (@deviceId, @hardwareUnitId, 0)
-      `);
-  }
+        .input('pDeviceId', sql.Int, deviceId)
+        .input('pHardwareUnitIds', sql.VarChar(sql.MAX), hardwareUnitIdsString)
+        .execute('sp_DeviceHardwareUnits_UpdateAssigned');
 }
 
+/**
+ * Gỡ bỏ liên kết một đơn vị phần cứng cụ thể khỏi một thiết bị.
+ * Sử dụng SP: sp_DeviceHardwareUnits_Detach
+ */
 export async function detachDeviceHardwareUnit(deviceId, hardwareUnitId) {
-  const pool = await poolPromise;
-  await pool.request()
-    .input('deviceId', sql.Int, deviceId)
-    .input('hardwareUnitId', sql.Int, hardwareUnitId)
-    .query(`
-      DELETE FROM Devices_HardwareUnits
-      WHERE deviceId = @deviceId AND hardwareUnitId = @hardwareUnitId
-    `);
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pDeviceId', sql.Int, deviceId)
+        .input('pHardwareUnitId', sql.Int, hardwareUnitId)
+        .execute('sp_DeviceHardwareUnits_Detach');
 }

@@ -2,84 +2,109 @@ import { poolPromise } from '../db/db.js';
 import sql from 'mssql';
 import { canDeleteRecord } from '../utils/deletionGuard.js';
 
+/**
+ * Lấy danh sách phần cứng với phân trang và lọc.
+ * Sử dụng SP: sp_Hardwares_GetAll
+ */
 export async function getHardwares(filters) {
-  const page = parseInt(filters.page) || 1;
-  const limit = parseInt(filters.limit) || 10;
-  const offset = (page - 1) * limit;
+    const page = parseInt(filters.page) || 1;
+    const limit = parseInt(filters.limit) || 10;
+    const offset = (page - 1) * limit;
 
-  const pool = await poolPromise;
-  const request = pool.request()
-    .input('offset', sql.Int, offset)
-    .input('limit', sql.Int, limit);
+    const pool = await poolPromise;
+    const request = pool.request();
 
-  if (filters.code) request.input('code', sql.VarChar(50), `%${filters.code}%`);
-  if (filters.name) request.input('name', sql.NVarChar(100), `%${filters.name}%`);
-  if (filters.hardwareTypeId) request.input('hardwareTypeId', sql.Int, filters.hardwareTypeId);
+    // Chuẩn bị tham số cho SP
+    const codeParam = filters.code ? `%${filters.code}%` : null;
+    const nameParam = filters.name ? `%${filters.name}%` : null;
+    const hardwareTypeIdParam = filters.hardwareTypeId ? filters.hardwareTypeId : null;
 
-  let where = 'WHERE 1=1';
-  if (filters.code) where += ' AND code LIKE @code';
-  if (filters.name) where += ' AND name LIKE @name';
-  if (filters.hardwareTypeId) where += ' AND hardwareTypeId = @hardwareTypeId';
-  if (filters.filter === 'active') where += ' AND isInactive = 0';
-  if (filters.filter === 'inactive') where += ' AND isInactive = 1';
+    const result = await request
+        .input('pOffset', sql.Int, offset)
+        .input('pLimit', sql.Int, limit)
+        .input('pCode', sql.VarChar(50), codeParam)
+        .input('pName', sql.NVarChar(100), nameParam)
+        .input('pHardwareTypeId', sql.Int, hardwareTypeIdParam)
+        .input('pFilter', sql.VarChar(20), filters.filter || null)
+        .execute('sp_Hardwares_GetAll');
 
-  const totalResult = await request.query(`SELECT COUNT(*) AS total FROM Hardwares ${where}`);
-  const result = await request.query(`
-    SELECT * FROM Hardwares
-    ${where}
-    ORDER BY id DESC
-    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
-  `);
+    /* * SP sp_Hardwares_GetAll trả về 2 result sets:
+     * Result 1: Tổng số lượng (total)
+     * Result 2: Dữ liệu (hardwares)
+     */
+    
+    // Kiểm tra kết quả
+    if (!result.recordsets || result.recordsets.length < 2) {
+        throw new Error("Lỗi truy vấn: SP không trả về đủ 2 tập hợp kết quả.");
+    }
+    
+    const totalCount = result.recordsets[0][0].total || 0;
+    const hardwaresData = result.recordsets[1];
 
-  return { hardwares: result.recordset, total: totalResult.recordset[0].total };
+    return { 
+        hardwares: hardwaresData, 
+        total: totalCount 
+    };
 }
 
+/**
+ * Tạo mới phần cứng.
+ * Sử dụng SP: sp_Hardwares_Create
+ */
 export async function createHardwareService({ code, name, hardwareTypeId, note }) {
-  const pool = await poolPromise;
-  await pool.request()
-    .input('code', sql.VarChar(50), code)
-    .input('name', sql.NVarChar(100), name)
-    .input('hardwareTypeId', sql.Int, hardwareTypeId)
-    .input('note', sql.NVarChar(sql.MAX), note)
-    .query(`
-      INSERT INTO Hardwares(code, name, hardwareTypeId, note, isInactive)
-      VALUES (@code, @name, @hardwareTypeId, @note, 0)
-    `);
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pCode', sql.VarChar(50), code)
+        .input('pName', sql.NVarChar(100), name)
+        .input('pHardwareTypeId', sql.Int, hardwareTypeId)
+        .input('pNote', sql.NVarChar(sql.MAX), note)
+        .execute('sp_Hardwares_Create');
 }
 
+/**
+ * Cập nhật phần cứng.
+ * Sử dụng SP: sp_Hardwares_Update
+ */
 export async function updateHardwareService(id, { code, name, hardwareTypeId, note }) {
-  const pool = await poolPromise;
-  await pool.request()
-    .input('id', sql.Int, id)
-    .input('code', sql.VarChar(50), code)
-    .input('name', sql.NVarChar(100), name)
-    .input('hardwareTypeId', sql.Int, hardwareTypeId)
-    .input('note', sql.NVarChar(sql.MAX), note)
-    .query(`
-      UPDATE Hardwares SET
-        code = @code,
-        name = @name,
-        hardwareTypeId = @hardwareTypeId,
-        note = @note
-      WHERE id = @id
-    `);
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pId', sql.Int, id)
+        .input('pCode', sql.VarChar(50), code)
+        .input('pName', sql.NVarChar(100), name)
+        .input('pHardwareTypeId', sql.Int, hardwareTypeId)
+        .input('pNote', sql.NVarChar(sql.MAX), note)
+        .execute('sp_Hardwares_Update');
 }
 
+/**
+ * Chuyển đổi trạng thái hoạt động/ngừng hoạt động của phần cứng.
+ * Sử dụng SP: sp_Hardwares_ToggleStatus
+ */
 export async function toggleHardwareService(id) {
-  const pool = await poolPromise;
-  await pool.request()
-    .input('id', sql.Int, id)
-    .query(`UPDATE Hardwares SET isInactive = CASE WHEN isInactive = 1 THEN 0 ELSE 1 END WHERE id = @id`);
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pId', sql.Int, id)
+        .execute('sp_Hardwares_ToggleStatus');
 }
 
+/**
+ * Xóa phần cứng (có kiểm tra khóa ngoại).
+ * Sử dụng SP: sp_Hardwares_Delete
+ */
 export async function deleteHardwareService(id) {
-  const pool = await poolPromise;
+    // 1. Kiểm tra khóa ngoại ở tầng Node.js
     const rules = [
         { table: 'HardwareUnits', field: 'hardwareId' }
-      ];
+    ];
     const canDelete = await canDeleteRecord(id, rules);
-    if (!canDelete) throw new Error('Không thể xóa - phần cứng đang được sử dụng');
-  await pool.request()
-    .input('id', sql.Int, id)
-    .query(`DELETE FROM Hardwares WHERE id = @id`);
+    
+    if (!canDelete) {
+        throw new Error('Không thể xóa - phần cứng đang được sử dụng');
+    }
+    
+    // 2. Nếu OK, gọi SP để xóa
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pId', sql.Int, id)
+        .execute('sp_Hardwares_Delete');
 }
