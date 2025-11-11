@@ -1,75 +1,107 @@
 import { poolPromise } from '../db/db.js';
 import sql from 'mssql';
+// Giữ nguyên import cho hàm kiểm tra xóa
 import { canDeleteRecord } from '../utils/deletionGuard.js';
 
+/**
+ * Lấy danh sách loại thiết bị với phân trang và lọc.
+ * Sử dụng SP: sp_DeviceTypes_GetAll
+ */
 export async function getDeviceTypes(filters) {
-  const page = parseInt(filters.page) || 1;
-  const limit = parseInt(filters.limit) || 10;
-  const offset = (page - 1) * limit;
+    const page = parseInt(filters.page) || 1;
+    const limit = parseInt(filters.limit) || 10;
+    const offset = (page - 1) * limit;
 
-  const pool = await poolPromise;
-  const request = pool.request()
-    .input('offset', sql.Int, offset)
-    .input('limit', sql.Int, limit);
+    const pool = await poolPromise;
+    const request = pool.request();
 
-  if (filters.code) request.input('code', sql.NVarChar(100), `%${filters.code}%`);
-  if (filters.name) request.input('name', sql.NVarChar(100), `%${filters.name}%`);
+    // Chuẩn bị tham số cho SP
+    const codeParam = filters.code ? filters.code : null;
+    const nameParam = filters.name ? filters.name : null;
 
-  let where = 'WHERE 1=1';
-  if (filters.filter === 'active') where += ' AND isInactive = 0';
-  if (filters.filter === 'inactive') where += ' AND isInactive = 1';
-  if (filters.name) where += ' AND code LIKE @code';
-  if (filters.name) where += ' AND name LIKE @name';
+    const result = await request
+        .input('pOffset', sql.Int, offset)
+        .input('pLimit', sql.Int, limit)
+        .input('pCode', sql.NVarChar(100), codeParam)
+        .input('pName', sql.NVarChar(100), nameParam)
+        .input('pFilter', sql.VarChar(20), filters.filter || null)
+        .execute('sp_DeviceTypes_GetAll');
 
-  const total = await request.query(`SELECT COUNT(*) as total FROM DeviceTypes ${where}`);
-  const data = await request.query(`
-    SELECT * FROM DeviceTypes
-    ${where}
-    ORDER BY id DESC
-    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
-  `);
+    /* * SP sp_DeviceTypes_GetAll trả về 2 result sets:
+     * Result 1: Tổng số lượng (total)
+     * Result 2: Dữ liệu (deviceTypes)
+     */
+    
+    // Kiểm tra kết quả
+    if (!result.recordsets || result.recordsets.length < 2) {
+        throw new Error("Lỗi truy vấn: SP không trả về đủ 2 tập hợp kết quả.");
+    }
+    
+    const totalCount = result.recordsets[0][0].total || 0;
+    const deviceTypesData = result.recordsets[1];
 
-  return { deviceTypes: data.recordset, total: total.recordset[0].total };
+    return { 
+        deviceTypes: deviceTypesData, 
+        total: totalCount 
+    };
 }
 
+/**
+ * Tạo mới loại thiết bị.
+ * Sử dụng SP: sp_DeviceTypes_Create
+ */
 export async function createDeviceTypeService({ code, name, note }) {
-  const pool = await poolPromise;
-  await pool.request()
-    .input('code', sql.VarChar(10), code)
-    .input('name', sql.NVarChar(100), name)
-    .input('note', sql.NVarChar(200), note)
-    .query(`INSERT INTO DeviceTypes(code, name, note, isInactive) VALUES (@code, @name, @note, 0)`);
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pCode', sql.VarChar(10), code)
+        .input('pName', sql.NVarChar(100), name)
+        .input('pNote', sql.NVarChar(200), note)
+        .execute('sp_DeviceTypes_Create');
 }
 
-export async function updateDeviceTypeService(id, {code, name, note }) {
-  const pool = await poolPromise;
-  await pool.request()
-    .input('id', sql.Int, id)
-    .input('code', sql.VarChar(10), code)
-    .input('name', sql.NVarChar(100), name)
-    .input('note', sql.NVarChar(200), note)
-    .query(`UPDATE DeviceTypes 
-            SET code = @code, 
-                name = @name, 
-                note = COALESCE(NULLIF(@note, ''), note) 
-                WHERE id = @id`);
+/**
+ * Cập nhật loại thiết bị.
+ * Sử dụng SP: sp_DeviceTypes_Update
+ */
+export async function updateDeviceTypeService(id, { code, name, note }) {
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pId', sql.Int, id)
+        .input('pCode', sql.VarChar(10), code)
+        .input('pName', sql.NVarChar(100), name)
+        .input('pNote', sql.NVarChar(200), note)
+        .execute('sp_DeviceTypes_Update');
 }
 
+/**
+ * Chuyển đổi trạng thái hoạt động/ngừng hoạt động của loại thiết bị.
+ * Sử dụng SP: sp_DeviceTypes_ToggleStatus
+ */
 export async function toggleDeviceTypeService(id) {
-  const pool = await poolPromise;
-  await pool.request()
-    .input('id', sql.Int, id)
-    .query(`UPDATE DeviceTypes SET isInactive = CASE WHEN isInactive = 1 THEN 0 ELSE 1 END WHERE id = @id`);
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pId', sql.Int, id)
+        .execute('sp_DeviceTypes_ToggleStatus');
 }
 
+/**
+ * Xóa loại thiết bị (có kiểm tra khóa ngoại).
+ * Sử dụng SP: sp_DeviceTypes_Delete
+ */
 export async function deleteDeviceTypeService(id) {
-   const pool = await poolPromise;
+    // 1. Kiểm tra khóa ngoại ở tầng Node.js
     const rules = [
         { table: 'Devices', field: 'deviceTypeId' }
-      ];
+    ];
     const canDelete = await canDeleteRecord(id, rules);
-    if (!canDelete) throw new Error('Không thể xóa - loại thiết bị đang được sử dụng');
-  await pool.request()
-    .input('id', sql.Int, id)
-    .query(`DELETE FROM DeviceTypes WHERE id = @id`);
+    
+    if (!canDelete) {
+        throw new Error('Không thể xóa - loại thiết bị đang được sử dụng');
+    }
+    
+    // 2. Nếu OK, gọi SP để xóa
+    const pool = await poolPromise;
+    await pool.request()
+        .input('pId', sql.Int, id)
+        .execute('sp_DeviceTypes_Delete');
 }
