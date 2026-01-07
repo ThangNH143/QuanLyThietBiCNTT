@@ -25,6 +25,20 @@ export async function getDeviceAssignments(filters = {}) {
     return result.recordset;
 }
 
+//get all departments for dropdown
+export async function getAllDepartmentsForDropdown() {
+    try {
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .execute('sp_GetAllDepartments');
+        
+        return result.recordset; 
+    } catch (error) {
+        console.error('Lỗi tại getAllDepartmentsForDropdown:', error);
+        return [];
+    }
+}
+
 /**
  * Lấy danh sách thiết bị chưa được giao và không đang sửa chữa.
  * Tên SP: sp_Devices_GetAssignable
@@ -82,8 +96,20 @@ export async function revokeDeviceAssignment(id) {
  * Tên SP: sp_DeviceAssignments_Delete
  */
 export async function deleteDeviceAssignment(id) {
-    const pool = await poolPromise;
-    await pool.request()
-        .input('pId', sql.Int, id)
-        .execute('sp_DeviceAssignments_Delete');
+    try {
+        const pool = await poolPromise;
+        await pool.request()
+            .input('pId', sql.Int, id)
+            .execute('sp_DeviceAssignments_Delete');
+
+        return { success: true, message: 'Xóa thành công' };
+    } catch (error) {
+        // CHỈNH SỬA TẠI ĐÂY:
+        // Nếu lỗi đến từ lệnh THROW trong SP, message sẽ nằm trong error.message
+        console.error('SQL Error:', error);
+        return { 
+            success: false, 
+            message: error.message || 'Có lỗi xảy ra khi xóa dữ liệu' 
+        };
+    }
 }

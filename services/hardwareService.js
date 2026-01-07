@@ -92,19 +92,31 @@ export async function toggleHardwareService(id) {
  * Sử dụng SP: sp_Hardwares_Delete
  */
 export async function deleteHardwareService(id) {
-    // 1. Kiểm tra khóa ngoại ở tầng Node.js
-    const rules = [
-        { table: 'HardwareUnits', field: 'hardwareId' }
-    ];
-    const canDelete = await canDeleteRecord(id, rules);
-    
-    if (!canDelete) {
-        throw new Error('Không thể xóa - phần cứng đang được sử dụng');
+        try {
+        // 1. Kiểm tra khóa ngoại ở tầng Node.js
+        const rules = [
+            { table: 'HardwareUnits', field: 'hardwareId' }
+        ];
+        const canDelete = await canDeleteRecord(id, rules);
+        
+        if (!canDelete.success) {
+            return canDelete;
+        } 
+        
+        // 2. Nếu OK, gọi SP để xóa
+        const pool = await poolPromise;
+        await pool.request()
+            .input('pId', sql.Int, id)
+            .execute('sp_Hardwares_Delete');
+
+        return { success: true, message: 'Xóa thành công' };
+    } catch (error) {
+        // CHỈNH SỬA TẠI ĐÂY:
+        // Nếu lỗi đến từ lệnh THROW trong SP, message sẽ nằm trong error.message
+        console.error('SQL Error:', error);
+        return { 
+            success: false, 
+            message: error.message || 'Có lỗi xảy ra khi xóa dữ liệu' 
+        };
     }
-    
-    // 2. Nếu OK, gọi SP để xóa
-    const pool = await poolPromise;
-    await pool.request()
-        .input('pId', sql.Int, id)
-        .execute('sp_Hardwares_Delete');
 }

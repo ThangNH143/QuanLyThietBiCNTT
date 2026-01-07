@@ -1,6 +1,6 @@
 import { poolPromise } from '../db/db.js';
 import sql from 'mssql';
-import { canDeleteRecord } from '../utils/deletionGuard.js'; // Giữ lại hàm này
+import { canDeleteRecord } from '../utils/deletionGuard.js';
 import sanitizeFilters from '../utils/sanitizeFilters.js';
 
 /**
@@ -90,17 +90,44 @@ export async function toggleDeviceService(id) {
  * Lưu ý: Giữ lại logic kiểm tra ràng buộc (canDeleteRecord) ở tầng Service.
  */
 export async function deleteDeviceService(id) {
-    const pool = await poolPromise;
-    const rules = [
-        { table: 'DeviceAssignments', field: 'deviceId' },
-        { table: 'Repairs', field: 'deviceId' },
-        { table: 'DeviceHardwareUnits', field: 'deviceId' }
-    ];
-    // Giữ logic kiểm tra ràng buộc ở đây, chỉ gọi SP khi an toàn để xóa
-    const canDelete = await canDeleteRecord(id, rules);
-    if (!canDelete) throw new Error('Không thể xóa – thiết bị đang được sử dụng hoặc đã được gán phần cứng');
-    
-    await pool.request().input('pId', sql.Int, id).execute('sp_Devices_Delete');
+    try {
+        const pool = await poolPromise;
+        const rules = [
+            { table: 'DeviceAssignments', field: 'deviceId', label: 'Lịch sử bàn giao' },
+            { table: 'Repairs', field: 'deviceId', label: 'Phiếu sửa chữa' },
+            { table: 'DeviceHardwareUnits', field: 'deviceId', label: 'Cấu hình phần cứng' }
+        ];
+        // Giữ logic kiểm tra ràng buộc ở đây, chỉ gọi SP khi an toàn để xóa
+        const canDelete = await canDeleteRecord(id, rules);
+        if (canDelete.success === false) {
+            return {
+                success: false,
+                message: canDelete.message
+            };
+        } 
+        
+        const result = await pool.request()
+                        .input('pId', sql.Int, id)
+                        .execute('sp_Devices_Delete');
+
+        if (result.rowsAffected[0] > 0) {
+            return { 
+                success: true, 
+                message: 'Xóa thiết bị thành công.' 
+            };
+        } else {
+            return { 
+                success: false, 
+                message: 'Không tìm thấy thiết bị để xóa hoặc lỗi thực thi.' 
+            };
+        }
+    } catch (error) {
+        console.error('SQL Error:', error);
+        return { 
+            success: false, 
+            message: error.message || 'Có lỗi xảy ra khi xóa dữ liệu' 
+        };
+    }   
 }
 
 /**

@@ -130,9 +130,21 @@ export async function updateDeviceHardwareAssigned(deviceId, hardwareUnitIds = [
  * Sử dụng SP: sp_DeviceHardwareUnits_Detach
  */
 export async function detachDeviceHardwareUnit(deviceId, hardwareUnitId) {
-    const pool = await poolPromise;
-    await pool.request()
-        .input('pDeviceId', sql.Int, deviceId)
-        .input('pHardwareUnitId', sql.Int, hardwareUnitId)
-        .execute('sp_DeviceHardwareUnits_Detach');
+    try {
+        const pool = await poolPromise;
+        await pool.request()
+            .input('pDeviceId', sql.Int, deviceId)
+            .input('pHardwareUnitId', sql.Int, hardwareUnitId)
+            .execute('sp_DeviceHardwareUnits_Detach');
+
+        return { success: true, message: 'Xóa thành công' };
+    } catch (error) {
+        // CHỈNH SỬA TẠI ĐÂY:
+        // Nếu lỗi đến từ lệnh THROW trong SP, message sẽ nằm trong error.message
+        console.error('SQL Error:', error);
+        return { 
+            success: false, 
+            message: error.message || 'Có lỗi xảy ra khi xóa dữ liệu' 
+        };
+    }
 }

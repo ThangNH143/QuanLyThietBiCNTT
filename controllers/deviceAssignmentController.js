@@ -5,11 +5,17 @@ import {
   createDeviceAssignment,
   updateDeviceAssignment,
   revokeDeviceAssignment,
-  deleteDeviceAssignment
+  deleteDeviceAssignment,
+  getAllDepartmentsForDropdown
 } from '../services/deviceAssignmentService.js';
 
 export function getDeviceAssignmentPage(req, res) {
   res.render('device-assignments/index');
+}
+
+export async function getAllDepartments(req,res) {
+  const result = await getAllDepartmentsForDropdown();
+  res.json(result);
 }
 
 export async function getDeviceAssignmentList(req, res) {
@@ -38,6 +44,19 @@ export async function revokeAssignment(req, res) {
 }
 
 export async function deleteAssignment(req, res) {
-  await deleteDeviceAssignment(req.params.id);
-  res.json({ message: 'Đã xóa lịch sử gán thiết bị' });
+  const result = await deleteDeviceAssignment(req.params.id);
+  if (result.success) {
+    // Nếu thành công, trả về 200 kèm message
+    return res.json({ 
+     success: true, 
+     message: result.message 
+    });
+  } else {
+    // QUAN TRỌNG: Nếu thất bại do ràng buộc dữ liệu, phải trả về status lỗi (400 hoặc 409)
+    // Điều này giúp AJAX nhảy vào block .error() thay vì .success()
+    return res.status(400).json({ 
+      success: false, 
+      message: result.message 
+    });
+  }
 }

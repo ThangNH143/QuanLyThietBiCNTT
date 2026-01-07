@@ -1,3 +1,25 @@
+$(document).ready(function() {
+  loadDeviceAssignments();
+  initSelect2();
+  loadDepartments();
+});
+
+function initSelect2() {
+  $('#editDeptDropdown').select2({
+    dropdownParent: $('#editDeviceAssignmentModal'),
+    width: '100%',
+    placeholder: 'Chọn phòng ban...',
+    allowClear: true
+  });
+
+  $('#createDeptDropdown').select2({
+    dropdownParent: $('#createDeviceAssignmentModal'),
+    width: '100%',
+    placeholder: 'Chọn phòng ban...',
+    allowClear: true
+  });
+}
+
 function toggleModal(modalSelector, action = 'open') {
   document.activeElement?.blur(); // ✅ Gỡ focus trước khi thao tác
 
@@ -12,6 +34,25 @@ function toggleModal(modalSelector, action = 'open') {
   }
 }
 
+let departmentsLoaded = false;
+
+function loadDepartments() {
+  // Nếu đã nạp rồi thì trả về Promise thành công luôn
+  if (departmentsLoaded) return Promise.resolve();
+  // Sử dụng đúng route bạn đã định nghĩa trong file assignment.js (route)
+  return $.get('/assignments/departments/ajax', function (data) {
+    const createDropdown = $('#createDeptDropdown');
+    const editDropdown = $('#editDeptDropdown');
+    const options = (data || []).map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+    const placeholder = '<option value="">-- Chọn phòng ban --</option>';
+
+    // Xóa sạch option cũ
+    createDropdown.empty().append(placeholder + options);
+    editDropdown.empty().append(placeholder + options);
+
+    departmentsLoaded = true;
+  });
+}
 
 function matchByText(params, data) {
   if ($.trim(params.term) === '') return data;
@@ -27,84 +68,75 @@ function loadDeviceAssignments(params = {}) {
   $.get('/assignments/ajax?' + $.param(params), function (data) {
     const rows = data.map(item => {
       const badge = item.isUnderRepair ? '<span class="text-danger ms-2">(Đang sửa)</span>' : '';
+      const cleanNote = item.note ? item.note.replace(/'/g, "\\'").replace(/"/g, "&quot;") : '';
+      const sDate = item.startDate || '';
+      const eDate = item.endDate || '';
       return `
         <tr>
           <td>${item.deviceCode} - ${item.deviceName} (${item.deviceType || ''}) ${badge}</td>
           <td>${item.deptName}</td>
-          <td>${item.startDate?.slice(0,10)} → ${item.endDate ? item.endDate.slice(0,10) : 'Hiện tại'}</td>
+          <td>${item.startDate?.slice(0,10)} → ${eDate ? eDate.slice(0,10) : 'Hiện tại'}</td>
           <td>${item.note || ''}</td>
           <td>
-            <button class="btn btn-sm btn-warning" onclick="openEditAssignmentModal(${item.id})">✏️</button>
+            <button class="btn btn-sm btn-warning" onclick="openEditAssignmentModal('${item.id}', '${item.deptId}', '${sDate}', '${eDate}', '${cleanNote}')">✏️</button>
             <button class="btn btn-sm btn-secondary" onclick="revokeAssignment(${item.id})">⛔ Thu hồi</button>
             <button class="btn btn-sm btn-danger" onclick="deleteAssignment(${item.id})">🗑️</button>
           </td>
         </tr>`;
     }).join('');
-    $('#deviceAssignmentTable').html(rows);
+    $('#deviceAssignmentTable').html(rows || '<tr><td colspan="5" class="text-center">Không có dữ liệu</td></tr>');
   });
 }
 
-function openCreateAssignmentModal() {
-  toggleModal('#createDeviceAssignmentModal', 'open');
-      const deviceDropdown = $('#createDeviceDropdown').empty();
-      const deptDropdown = $('#createDeptDropdown').empty();
+async function openCreateAssignmentModal() {
+  try {
+    // Reset form trước khi mở
+    $('#createDeviceAssignmentForm')[0].reset();
+    $('#createDeptDropdown').val('').trigger('change');
 
-      $.get('/assignments/available-devices', function (data) {
-        (data.devices || []).forEach(dev => {
-          const label = `${dev.deviceCode} - ${dev.deviceName} (${dev.deviceType})`;
-          deviceDropdown.append(`<option value="${dev.id}">${label}</option>`);
-        });
-        deviceDropdown.select2({
-          dropdownParent: '#createDeviceAssignmentModal',
-          width: '100%',
-          placeholder: 'Tìm thiết bị...',
-          allowClear: true,
-          matcher: matchByText
-        });
-      });
+    // Gọi nạp phòng ban trước
+    await loadDepartments();
+    
+    // Nạp danh sách thiết bị rảnh
+    const res = await $.get('/assignments/available-devices');
+    const dropdown = $('#createDeviceDropdown');
+    dropdown.empty().append('<option value="">-- Chọn thiết bị --</option>');
+    
+    res.devices.forEach(d => {
+      dropdown.append(`<option value="${d.id}">${d.deviceCode} - ${d.deviceName}</option>`);
+    });
 
-      $.get('/departments/ajax', function (data) {
-        (data.departments || []).forEach(dept => {
-          deptDropdown.append(`<option value="${dept.id}">${dept.name}</option>`);
-        });
-        deptDropdown.select2({
-          dropdownParent: '#createDeviceAssignmentModal',
-          width: '100%',
-          placeholder: 'Tìm phòng ban...',
-          allowClear: true,
-          matcher: matchByText
-        });
-      });
+    toggleModal('#createDeviceAssignmentModal', 'open');
+  } catch (err) {
+    console.error("Lỗi khi chuẩn bị modal:", err);
+  }
 }
 
-function openEditAssignmentModal(id) {
-  toggleModal('#editDeviceAssignmentModal', 'open');
-      $('#editAssignmentId').val(id);
+async function openEditAssignmentModal(id, deptId, startDate, endDate, note) {
+  try {
+    $('#editDeviceAssignmentForm')[0].reset();
+    // 1. Điền dữ liệu text/date vào trước để người dùng thấy ngay
+    $('#editAssignmentId').val(id);
+    $('#editStartDate').val(startDate ? startDate.slice(0, 10) : '');
+    $('#editEndDate').val(endDate && endDate !== 'null' ? endDate.slice(0, 10) : '');
+    $('#editNote').val(note && note !== 'null' ? note : '');
 
-      $.get('/assignments/ajax', function (list) {
-        const found = list.find(a => a.id === id);
-        if (!found) return;
+    await loadDepartments();
 
-        $('#editStartDate').val(found.startDate?.slice(0,10));
-        $('#editEndDate').val(found.endDate ? found.endDate.slice(0,10) : '');
-        $('#editNote').val(found.note || '');
-
-        $.get('/departments/ajax', function (data) {
-          const dropdown = $('#editDeptDropdown').empty();
-          (data.departments || []).forEach(dept => {
-            dropdown.append(`<option value="${dept.id}">${dept.name}</option>`);
-          });
-          dropdown.val(found.deptId).trigger('change');
-          dropdown.select2({
-            dropdownParent: '#editDeviceAssignmentModal',
-            width: '100%',
-            placeholder: 'Tìm phòng ban...',
-            allowClear: true,
-            matcher: matchByText
-          });
-        });
-      });
-
+    // 3. Mở Modal
+    toggleModal('#editDeviceAssignmentModal', 'open');
+    // 2. Cập nhật Select2 sau khi Modal bắt đầu hiển thị
+    setTimeout(() => {
+        if (deptId && deptId !== 'null') {
+            $('#editDeptDropdown').val(deptId).trigger('change');
+        } else {
+            $('#editDeptDropdown').val('').trigger('change');
+        }
+    }, 150);
+    
+  } catch (error) {
+    console.error("Lỗi khi mở modal sửa:", error);
+  }
 }
 
 $('#createDeviceAssignmentForm').on('submit', function (e) {
@@ -137,7 +169,8 @@ $('#editDeviceAssignmentForm').on('submit', function (e) {
     success: () => {
       toggleModal('#editDeviceAssignmentModal', 'close');
       loadDeviceAssignments();
-    }
+    },
+    error: (xhr) => alert('Lỗi: ' + (xhr.responseJSON?.message || 'Không thể cập nhật'))
   });
 });
 
@@ -173,4 +206,8 @@ $('#resetDeviceAssignmentFilter').on('click', function () {
 
 });
 
-$(document).ready(() => loadDeviceAssignments());
+$(document).ready(() => {
+  loadDeviceAssignments();
+  loadDepartments()
+});
+
