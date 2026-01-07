@@ -72,17 +72,17 @@ app.use((req,res,next) => {
 });
 
 app.use((req, res, next) => {
-  console.log('--- Comprehensive Request Log ---');
-  console.log(`Timestamp: ${new Date().toISOString()}`);
-  console.log(`Method: ${req.method}`);
-  console.log(`Original URL (req.originalUrl): ${req.originalUrl}`); // URL gốc trước khi được Express xử lý
-  console.log(`Path (req.path): ${req.path}`);                           // Đường dẫn đã được chuẩn hóa bởi Express
-  console.log(`URL (req.url): ${req.url}`);                             // Đường dẫn được gửi bởi client (hoặc proxy)
-  console.log('Headers:');
-  for (const header in req.headers) {
-      console.log(`  ${header}: ${req.headers[header]}`);
-  }
-  console.log('--- End Comprehensive Request Log ---');
+  // console.log('--- Comprehensive Request Log ---');
+  // console.log(`Timestamp: ${new Date().toISOString()}`);
+  // console.log(`Method: ${req.method}`);
+  // console.log(`Original URL (req.originalUrl): ${req.originalUrl}`); // URL gốc trước khi được Express xử lý
+  // console.log(`Path (req.path): ${req.path}`);                           // Đường dẫn đã được chuẩn hóa bởi Express
+  // console.log(`URL (req.url): ${req.url}`);                             // Đường dẫn được gửi bởi client (hoặc proxy)
+  // console.log('Headers:');
+  // for (const header in req.headers) {
+  //     console.log(`  ${header}: ${req.headers[header]}`);
+  // }
+  // console.log('--- End Comprehensive Request Log ---');
   next(); // Chuyển quyền điều khiển sang middleware/route tiếp theo
 });
 app.set('view engine', 'ejs');

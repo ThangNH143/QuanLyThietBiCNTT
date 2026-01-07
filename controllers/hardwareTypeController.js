@@ -65,8 +65,21 @@ export async function toggleHardwareType(req, res) {
 
 export async function deleteHardwareType(req, res) {
   try {
-    await deleteHardwareTypeService(req.params.id);
-    res.json({ message: 'Đã xóa loại phần cứng' });
+    const result = await deleteHardwareTypeService(req.params.id);
+    if (result.success) {
+      // Nếu thành công, trả về 200 kèm message
+      return res.json({ 
+      success: true, 
+      message: result.message 
+      });
+    } else {
+      // QUAN TRỌNG: Nếu thất bại do ràng buộc dữ liệu, phải trả về status lỗi (400 hoặc 409)
+      // Điều này giúp AJAX nhảy vào block .error() thay vì .success()
+      return res.status(400).json({ 
+        success: false, 
+        message: result.message 
+      });
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message || 'Lỗi khi xóa loại phần cứng' });

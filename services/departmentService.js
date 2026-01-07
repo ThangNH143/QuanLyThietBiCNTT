@@ -88,15 +88,26 @@ export async function toggleDepartmentService(id) {
  * Tên SP: sp_Departments_Delete
  */
 export async function deleteDepartmentService(id) {
-    const rules = [
-        { table: 'DeviceAssignments', field: 'deptId' }
-    ];
-    // Giữ nguyên logic kiểm tra ràng buộc trong Node.js
-    const canDelete = await canDeleteRecord(id, rules); 
-    if (!canDelete) throw new Error('Không thể xóa phòng ban đang được sử dụng');
-    
-    const pool = await poolPromise;
-    await pool.request()
-        .input('pId', sql.Int, id)
-        .execute('sp_Departments_Delete');
+    try {
+        const rules = [
+            { table: 'DeviceAssignments', field: 'deptId' }
+        ];
+        // Giữ nguyên logic kiểm tra ràng buộc trong Node.js
+        const canDelete = await canDeleteRecord(id, rules); 
+        if (!canDelete.success) {
+            return canDelete;
+        } //throw new Error('Không thể xóa phòng ban đang được sử dụng');
+        
+        const pool = await poolPromise;
+        await pool.request()
+            .input('pId', sql.Int, id)
+            .execute('sp_Departments_Delete');
+        return { success: true, message: 'Xóa thành công' };
+    } catch (error) {
+        console.error('SQL Error:', error);
+        return { 
+            success: false, 
+            message: error.message || 'Có lỗi xảy ra khi xóa dữ liệu' 
+        };
+    }
 }

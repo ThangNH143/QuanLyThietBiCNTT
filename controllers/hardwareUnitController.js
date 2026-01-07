@@ -68,8 +68,21 @@ export async function toggleHardwareUnit(req, res) {
 
 export async function deleteHardwareUnit(req, res) {
   try {
-    await deleteHardwareUnitService(req.params.id);
-    res.json({ message: 'Đã xóa thiết bị phần cứng' });
+    const result = await deleteHardwareUnitService(req.params.id);
+    if (result.success) {
+      // Nếu thành công, trả về 200 kèm message
+      return res.json({ 
+      success: true, 
+      message: result.message 
+      });
+    } else {
+      // QUAN TRỌNG: Nếu thất bại do ràng buộc dữ liệu, phải trả về status lỗi (400 hoặc 409)
+      // Điều này giúp AJAX nhảy vào block .error() thay vì .success()
+      return res.status(400).json({ 
+        success: false, 
+        message: result.message 
+      });
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message || 'Lỗi khi xóa thiết bị phần cứng' });

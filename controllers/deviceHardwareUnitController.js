@@ -49,6 +49,19 @@ export async function updateAssignedHardwareUnits(req, res) {
 }
 
 export async function detachHardwareUnit(req, res) {
-  await detachDeviceHardwareUnit(req.params.deviceId, req.params.hardwareUnitId);
-  res.json({ message: 'Đã gỡ phần cứng khỏi thiết bị' });
+  const result = await detachDeviceHardwareUnit(req.params.deviceId, req.params.hardwareUnitId);
+  if (result.success) {
+    // Nếu thành công, trả về 200 kèm message
+    return res.json({ 
+     success: true, 
+     message: result.message 
+    });
+  } else {
+    // QUAN TRỌNG: Nếu thất bại do ràng buộc dữ liệu, phải trả về status lỗi (400 hoặc 409)
+    // Điều này giúp AJAX nhảy vào block .error() thay vì .success()
+    return res.status(400).json({ 
+      success: false, 
+      message: result.message 
+    });
+  }
 }

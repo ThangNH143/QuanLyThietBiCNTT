@@ -7,13 +7,15 @@ import {
   createAssignment,
   updateAssignment,
   revokeAssignment,
-  deleteAssignment
+  deleteAssignment,
+  getAllDepartments
 } from '../controllers/deviceAssignmentController.js';
 
 const router = express.Router();
 
 router.get('/', getDeviceAssignmentPage);
 router.get('/ajax', getDeviceAssignmentList);
+router.get('/departments/ajax', getAllDepartments);
 router.get('/available-devices', getAvailableDevices);
 router.post('/', createAssignment);
 router.put('/:id', updateAssignment);

@@ -31,8 +31,21 @@ export async function updateRepairRecord(req, res) {
 }
 
 export async function deleteRepairRecord(req, res) {
-  await deleteRepair(req.params.id);
-  res.json({ message: 'Đã xóa phiếu sửa chữa' });
+  const result = await deleteRepair(req.params.id);
+  if (result.success) {
+      // Nếu thành công, trả về 200 kèm message
+      return res.json({ 
+      success: true, 
+      message: result.message 
+      });
+    } else {
+      // QUAN TRỌNG: Nếu thất bại do ràng buộc dữ liệu, phải trả về status lỗi (400 hoặc 409)
+      // Điều này giúp AJAX nhảy vào block .error() thay vì .success()
+      return res.status(400).json({ 
+        success: false, 
+        message: result.message 
+      });
+  }
 }
 
 export async function getAvailableDevices(req, res) {
