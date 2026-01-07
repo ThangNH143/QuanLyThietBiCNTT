@@ -2,7 +2,44 @@ $(document).ready(function() {
   loadDeviceAssignments();
   initSelect2();
   loadDepartments();
-});
+
+  // Sự kiện nút Reset
+  $('#resetDeviceAssignmentFilter').on('click', function () {
+    $('#filterDeviceAssignmentForm')[0].reset();
+    currentAssignmentParams = {
+      page: 1,
+      limit: 10,
+      deviceName: '',
+      deptName: '',
+      status: 'active'
+    };
+    loadDeviceAssignments(currentAssignmentParams);
+  });
+
+    // Sự kiện Tìm kiếm
+  $('#filterDeviceAssignmentForm').on('submit', function (e) {
+    e.preventDefault();
+    const formData = Object.fromEntries(new FormData(this));
+    // Khi tìm kiếm mới luôn bắt đầu từ trang 1
+      currentAssignmentParams = {
+      ...currentAssignmentParams,
+      ...formData,
+      page: 1
+    };
+    loadDeviceAssignments(currentAssignmentParams);
+  });
+
+  // Sự kiện nút mở modal gán mới
+  $('#btnOpenCreateAssignmentModal').on('click', openCreateAssignmentModal);  
+})
+
+let currentAssignmentParams = {
+  page: 1,
+  limit: 10,
+  deviceName: '',
+  deptName: '',
+  status: 'active'
+};
 
 function initSelect2() {
   $('#editDeptDropdown').select2({
@@ -64,28 +101,92 @@ function matchByText(params, data) {
   return text.includes(term) ? data : null;
 }
 
+// function loadDeviceAssignments(params = {}) {
+//   $.get('/assignments/ajax?' + $.param(params), function (data) {
+//     const rows = data.map(item => {
+//       const badge = item.isUnderRepair ? '<span class="text-danger ms-2">(Đang sửa)</span>' : '';
+//       const cleanNote = item.note ? item.note.replace(/'/g, "\\'").replace(/"/g, "&quot;") : '';
+//       const sDate = item.startDate || '';
+//       const eDate = item.endDate || '';
+//       return `
+//         <tr>
+//           <td>${item.deviceCode} - ${item.deviceName} (${item.deviceType || ''}) ${badge}</td>
+//           <td>${item.deptName}</td>
+//           <td>${item.startDate?.slice(0,10)} → ${eDate ? eDate.slice(0,10) : 'Hiện tại'}</td>
+//           <td>${item.note || ''}</td>
+//           <td>
+//             <button class="btn btn-sm btn-warning" onclick="openEditAssignmentModal('${item.id}', '${item.deptId}', '${sDate}', '${eDate}', '${cleanNote}')">✏️</button>
+//             <button class="btn btn-sm btn-secondary" onclick="revokeAssignment(${item.id})">⛔ Thu hồi</button>
+//             <button class="btn btn-sm btn-danger" onclick="deleteAssignment(${item.id})">🗑️</button>
+//           </td>
+//         </tr>`;
+//     }).join('');
+//     $('#deviceAssignmentTable').html(rows || '<tr><td colspan="5" class="text-center">Không có dữ liệu</td></tr>');
+//   });
+// }
 function loadDeviceAssignments(params = {}) {
-  $.get('/assignments/ajax?' + $.param(params), function (data) {
-    const rows = data.map(item => {
-      const badge = item.isUnderRepair ? '<span class="text-danger ms-2">(Đang sửa)</span>' : '';
-      const cleanNote = item.note ? item.note.replace(/'/g, "\\'").replace(/"/g, "&quot;") : '';
-      const sDate = item.startDate || '';
-      const eDate = item.endDate || '';
-      return `
-        <tr>
-          <td>${item.deviceCode} - ${item.deviceName} (${item.deviceType || ''}) ${badge}</td>
-          <td>${item.deptName}</td>
-          <td>${item.startDate?.slice(0,10)} → ${eDate ? eDate.slice(0,10) : 'Hiện tại'}</td>
-          <td>${item.note || ''}</td>
-          <td>
-            <button class="btn btn-sm btn-warning" onclick="openEditAssignmentModal('${item.id}', '${item.deptId}', '${sDate}', '${eDate}', '${cleanNote}')">✏️</button>
-            <button class="btn btn-sm btn-secondary" onclick="revokeAssignment(${item.id})">⛔ Thu hồi</button>
-            <button class="btn btn-sm btn-danger" onclick="deleteAssignment(${item.id})">🗑️</button>
-          </td>
-        </tr>`;
-    }).join('');
-    $('#deviceAssignmentTable').html(rows || '<tr><td colspan="5" class="text-center">Không có dữ liệu</td></tr>');
+  currentAssignmentParams = { ...currentAssignmentParams, ...params };
+
+  $.get('/assignments/ajax?', currentAssignmentParams, function (res) {
+    const tbody = $('#assignmentTableBody');
+    tbody.empty();
+
+    // res.data chứa danh sách, res.pagination chứa thông tin phân trang
+    const assignments = res.data || [];
+    
+    if (assignments.length === 0) {
+      tbody.append('<tr><td colspan="7" class="text-center text-muted">Không có dữ liệu</td></tr>');
+    } else {
+      assignments.forEach((item, index) => {
+        const rowNumber = (currentAssignmentParams.page - 1) * currentAssignmentParams.limit + index + 1;
+        const row = `
+          <tr>
+            <td>${rowNumber}</td>
+            <td>
+              <strong>${item.deviceCode} - ${item.deviceName || 'N/A'}</strong><br>
+              <small class="text-muted">Loại: ${item.deviceType || 'N/A'} ${item.isUnderRepair ? '<span class="text-danger ms-2">(Đang sửa)</span>' : ''}</small> 
+            </td>
+            <td>${item.deptName || 'N/A'}</td>
+            <td>${item.startDate?.slice(0,10)}</td>
+            <td>
+             ${item.endDate ? item.endDate.slice(0,10) : '<span class="badge bg-success">Đang sử dụng</span>'}
+            </td>
+            <td><small>${item.note || ''}</small></td>
+            <td>
+              <div class="btn-group">
+                <button class="btn btn-sm btn-outline-primary" onclick='openEditAssignmentModal(${JSON.stringify(item)})'>Sửa</button>
+                ${!item.endDate ? `<button class="btn btn-sm btn-outline-warning" onclick="revokeAssignment(${item.id})">Thu hồi</button>` : ''}
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteAssignment(${item.id})">Xóa</button>
+              </div>
+            </td>
+          </tr>
+        `;
+        tbody.append(row);
+      });
+    }
+    renderPagination(res.pagination);
   });
+}
+// Hiển thị thanh phân trang
+function renderPagination(pagination) {
+  const container = $('#assignmentPagination');
+  container.empty();
+  if (!pagination || pagination.totalPages <= 1) return;
+
+  let html = `<nav><ul class="pagination pagination-sm mb-0">`;
+  html += `<li class="page-item ${pagination.page === 1 ? 'disabled' : ''}"><a class="page-link" href="javascript:void(0)" onclick="changePage(${pagination.page - 1})">Trước</a></li>`;
+
+  for (let i = 1; i <= pagination.totalPages; i++) {
+    html += `<li class="page-item ${pagination.page === i ? 'active' : ''}"><a class="page-link" href="javascript:void(0)" onclick="changePage(${i})">${i}</a></li>`;
+  }
+
+  html += `<li class="page-item ${pagination.page === pagination.totalPages ? 'disabled' : ''}"><a class="page-link" href="javascript:void(0)" onclick="changePage(${pagination.page + 1})">Sau</a></li></ul></nav>`;
+  container.append(html);
+}
+
+function changePage(page) {
+  if (page < 1) return;
+  loadDeviceAssignments({page: page });
 }
 
 async function openCreateAssignmentModal() {
@@ -149,7 +250,7 @@ $('#createDeviceAssignmentForm').on('submit', function (e) {
   };
   $.post('/assignments', payload, () => {
     toggleModal('#createDeviceAssignmentModal', 'close');
-    loadDeviceAssignments();
+    loadDeviceAssignments(currentAssignmentParams);
   });
 });
 
@@ -168,7 +269,7 @@ $('#editDeviceAssignmentForm').on('submit', function (e) {
     data: payload,
     success: () => {
       toggleModal('#editDeviceAssignmentModal', 'close');
-      loadDeviceAssignments();
+      loadDeviceAssignments(currentAssignmentParams);
     },
     error: (xhr) => alert('Lỗi: ' + (xhr.responseJSON?.message || 'Không thể cập nhật'))
   });
@@ -178,7 +279,7 @@ function revokeAssignment(id) {
   $.ajax({
     url: `/assignments/${id}/revoke`,
     method: 'PUT',
-    success: () => loadDeviceAssignments()
+    success: () => loadDeviceAssignments(currentAssignmentParams)
   });
 }
 
@@ -186,7 +287,7 @@ function deleteAssignment(id) {
   $.ajax({
     url: `/assignments/${id}`,
     method: 'DELETE',
-    success: () => loadDeviceAssignments()
+    success: () => loadDeviceAssignments(currentAssignmentParams)
   });
 }
 
@@ -198,16 +299,15 @@ $('#filterDeviceAssignmentForm').on('submit', function (e) {
   loadDeviceAssignments(params);
 });
 
-$('#resetDeviceAssignmentFilter').on('click', function () {
-  $('#resetDeviceAssignmentFilter').on('click', function () {
-  $('#filterDeviceAssignmentForm')[0].reset();
-  loadDeviceAssignments({ status: 'active' }); // ✅ gắn lại mặc định rõ ràng
-});
+// $('#resetDeviceAssignmentFilter').on('click', function () {
+//   $('#resetDeviceAssignmentFilter').on('click', function () {
+//     $('#filterDeviceAssignmentForm')[0].reset();
+//     loadDeviceAssignments({ status: 'active' }); // ✅ gắn lại mặc định rõ ràng
+//   });
+// });
 
-});
-
-$(document).ready(() => {
-  loadDeviceAssignments();
-  loadDepartments()
-});
+// $(document).ready(() => {
+//   loadDeviceAssignments();
+//   loadDepartments();
+// });
 

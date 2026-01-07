@@ -7,6 +7,10 @@ import sql from 'mssql';
  */
 export async function getDeviceAssignments(filters = {}) {
     // 1. Chuẩn bị tham số
+    const page = parseInt(filters.page) || 1;
+    const limit = parseInt(filters.limit) || 10;
+    const offset = (page - 1) * limit;
+
     const allowed = ['active', 'revoked', 'all'];
     const status = allowed.includes(filters.status) ? filters.status : 'active';
 
@@ -19,10 +23,22 @@ export async function getDeviceAssignments(filters = {}) {
         .input('pStatus', sql.VarChar(10), status)
         .input('pDeviceNameSearch', sql.NVarChar(100), deviceNameSearch)
         .input('pDeptNameSearch', sql.NVarChar(100), deptNameSearch)
-        .execute('sp_DeviceAssignments_Get');
+        .input('pOffset', sql.Int, offset)
+        .input('pLimit', sql.Int, limit)
+        .execute('sp_DeviceAssignments_Get_Paged');
+    
+    const data = result.recordsets[0];
+    const totalItems = result.recordsets[1] ? result.recordsets[1][0].total : 0;
 
-    // SP này chỉ trả về một recordset duy nhất
-    return result.recordset;
+    return {
+        data: data,
+        pagination: {
+            page: page,
+            limit: limit,
+            totalItems: totalItems,
+            totalPages: Math.ceil(totalItems / limit)
+        }
+    };
 }
 
 //get all departments for dropdown

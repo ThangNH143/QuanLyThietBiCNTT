@@ -19,8 +19,12 @@ export async function getAllDepartments(req,res) {
 }
 
 export async function getDeviceAssignmentList(req, res) {
-  const result = await getDeviceAssignments(req.query);
-  res.json(result);
+  try {
+    const result = await getDeviceAssignments(req.query);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 }
 
 export async function getAvailableDevices(req, res) {
