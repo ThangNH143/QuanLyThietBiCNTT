@@ -77,7 +77,7 @@ export async function toggleHardwareUnit(req, res) {
     res.json({ message: 'Đã thay đổi trạng thái thiết bị phần cứng' });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Lỗi khi cập nhật trạng thái' });
+    res.status(500).json({ message: 'Lỗi khi cập nhật trạng thái', error: err.message });
   }
 }
 
