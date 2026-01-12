@@ -9,6 +9,10 @@ export async function getDevicesWithHardware(filters = {}) {
     const pool = await poolPromise;
     const request = pool.request();
 
+    // Pagination (default giống assignments)
+    const page = Math.max(parseInt(filters.page || 1, 10), 1);
+    const limit = Math.max(parseInt(filters.limit || 10, 10), 1);
+
     // Chuẩn bị tham số cho SP (sử dụng LIKE %...% hoặc NULL)
     const deviceNameParam = filters.deviceName ? `%${filters.deviceName}%` : null;
     const hardwareKeywordParam = filters.hardwareKeyword ? `%${filters.hardwareKeyword}%` : null;
@@ -16,16 +20,34 @@ export async function getDevicesWithHardware(filters = {}) {
     const result = await request
         .input('pDeviceName', sql.NVarChar(100), deviceNameParam)
         .input('pHardwareKeyword', sql.NVarChar(100), hardwareKeywordParam)
-        .execute('sp_DeviceHardwareUnits_GetDevicesWithHardware');
+        .input('pPage', sql.Int, page)
+        .input('pLimit', sql.Int, limit)
+        .execute('sp_DeviceHardwareUnits_GetDevicesWithHardware_Paged'); // ✅ đúng tên SP
 
-    // Chú ý: Dữ liệu được trả về DANG PHẲNG từ SQL, cần Grouping ở tầng Node.js
-    const grouped = [];
+    // ✅ Hỗ trợ cả 2 kiểu: data-first hoặc count-first
+    const rs0 = result.recordsets?.[0] || [];
+    const rs1 = result.recordsets?.[1] || [];
 
-    for (const row of result.recordset) {
-        let group = grouped.find(g => g.deviceId === row.deviceId);
-        
+    let rows = [];
+    let totalRecords = 0;
+
+    // Nếu rs0 là COUNT (có cột totalRecords) => count-first
+    if (rs0.length > 0 && rs0[0]?.totalRecords !== undefined) {
+    totalRecords = Number(rs0[0].totalRecords) || 0;
+    rows = rs1;
+    } else {
+    // data-first
+    rows = rs0;
+    totalRecords = Number(rs1?.[0]?.totalRecords) || 0;
+    }
+
+    const totalPages = Math.ceil(totalRecords / limit) || 1;
+
+    // Grouping ở tầng Node.js (theo device)
+    const map = new Map();
+    for (const row of rows) {
+        let group = map.get(row.deviceId);
         if (!group) {
-            // Tạo nhóm mới nếu chưa tồn tại
             group = {
                 deviceId: row.deviceId,
                 deviceCode: row.deviceCode,
@@ -33,10 +55,9 @@ export async function getDevicesWithHardware(filters = {}) {
                 deviceType: row.deviceType,
                 hardwareUnits: []
             };
-            grouped.push(group);
+            map.set(row.deviceId, group);
         }
-        
-        // Thêm đơn vị phần cứng vào nhóm
+
         if (row.hwId) {
             group.hardwareUnits.push({
                 id: row.hwId,
@@ -47,7 +68,15 @@ export async function getDevicesWithHardware(filters = {}) {
         }
     }
 
-    return grouped;
+    return {
+        data: Array.from(map.values()),
+        pagination: {
+            page,
+            limit,
+            totalRecords,
+            totalPages
+        }
+    };
 }
 
 /**

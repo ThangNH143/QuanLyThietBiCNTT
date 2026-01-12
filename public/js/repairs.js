@@ -1,5 +1,13 @@
 const REPAIR_STATUS = ['opened', 'in-progress', 'completed', 'canceled'];
-let currentRepairParams = { status: 'opened' };
+
+// State dùng để giữ bộ lọc + trang hiện tại (giống assignments)
+let currentRepairParams = {
+  page: 1,
+  limit: 10,
+  deviceKeyword: '',
+  hardwareKeyword: '',
+  status: 'opened'
+};
 
 function toggleModal(modalSelector, action = 'open') {
   document.activeElement?.blur();
@@ -37,6 +45,7 @@ function matchByText(params, data) {
 function loadCreateDropdowns() {
   const deviceDropdown = $('#createRepairDeviceDropdown').empty();
   const hwDropdown = $('#createRepairHardwareDropdown').empty();
+  const receiverDropdown = $('#createRepairReceiverDropdown').empty();
 
   $.get('/repairs/dropdown/devices', function (data) {
     (data.devices || []).forEach(d => {
@@ -64,10 +73,9 @@ function loadCreateDropdowns() {
   $.get('/repairs/dropdown/users', function (data) {
     (data.users || []).forEach(u => {
       const label = `${u.code} - ${u.name} (${u.deptName || 'Không rõ'})`;
-      $('#createRepairReceiverDropdown').append(`<option value="${u.id}">${label}</option>`);
+      receiverDropdown.append(`<option value="${u.id}">${label}</option>`);
     });
-    $('#createRepairSenderDropdown').select2({ dropdownParent: '#repairCreateModal', width: '100%', matcher: matchByText });
-    $('#createRepairReceiverDropdown').select2({ dropdownParent: '#repairCreateModal', width: '100%', matcher: matchByText });
+    receiverDropdown.select2({ dropdownParent: '#repairCreateModal', width: '100%', matcher: matchByText, placeholder: 'Chọn người nhận...' });
   });
 }
 
@@ -92,6 +100,7 @@ function loadHardwareForCreate(deviceId) {
 // 🔧 Load dropdown cho modal sửa
 function loadEditDropdowns(data) {
   const hwDropdown = $('#editRepairHardwareDropdown').empty();
+  const receiverDropdown = $('#editRepairReceiverDropdown').empty();
   $.get(`/repairs/dropdown/hardware-units?deviceId=${data.deviceId}&currentRepairId=${data.id}`, function (res) {
     (res.units || []).forEach(hw => {
       const label = `${hw.code} - ${hw.hardwareName} - ${hw.serialNumber}`;
@@ -114,13 +123,14 @@ function loadEditDropdowns(data) {
     (dataUser.users || []).forEach(u => {
       const label = `${u.code} - ${u.name} (${u.deptName || 'Không rõ'})`;
       $('#editRepairSenderText').val(data.userCreateName || '');
-      $('#editRepairReceiverDropdown').append(`<option value="${u.id}">${label}</option>`);
+      receiverDropdown.append(`<option value="${u.id}">${label}</option>`);
     });
-    $('#editRepairSenderDropdown').select2({ dropdownParent: '#repairEditModal', width: '100%', matcher: matchByText });
-    $('#editRepairReceiverDropdown').select2({ dropdownParent: '#repairEditModal', width: '100%', matcher: matchByText });
+    receiverDropdown.select2({ dropdownParent: '#repairEditModal', width: '100%', matcher: matchByText, placeholder: 'Chọn người nhận...' });
 
     $('#editRepairSenderText').val(data.userCreateName || '').trigger('change');
-    $('#editRepairReceiverDropdown').val(data.userResolveId || '').trigger('change');
+    // Lưu ý: SP GetById có thể trả về receiverId hoặc userResolveId (tùy implementation)
+    const receiverId = data.userResolveId ?? data.receiverId ?? null;
+    receiverDropdown.val(receiverId).trigger('change');
   });
 }
 
@@ -142,13 +152,25 @@ async function openEditRepairModal(id) {
     $('#editRepairForm')[0].reset();
     $('#editRepairHardwareDropdown').empty();
 
-    const data = await $.get(`/repairs/${id}`);
+    // Clear select2 values (tránh giữ state cũ khi request lỗi)
+    try {
+      $('#editRepairReceiverDropdown').empty().trigger('change');
+    } catch (_) {}
+
+    let data;
+    try {
+      data = await $.get(`/repairs/${id}`);
+    } catch (xhr) {
+      const msg = xhr?.responseJSON?.message || xhr?.responseJSON?.error || 'Không thể tải dữ liệu phiếu sửa chữa';
+      showRepairAlert(msg, 'danger');
+      toggleModal('#repairEditModal', 'close');
+      return;
+    }
     $('#editRepairId').val(id);
     $('#editRepairDeviceId').val(data.deviceId);
     $('#editRepairDeviceInfo').val(`${data.deviceCode} - ${data.deviceName}`);
     $('#editRepairSenderText').val(data.userCreateName );
     $('#editRepairBrokenDate').val(data.brokenDate?.slice(0, 10));
-    $('#editRepairReceiverDropdown').val(data.receiverName);
     $('#editRepairRepairDate').val(data.repairDate ? data.repairDate.slice(0, 10) : '');
     $('#editRepairStatusDropdown').val(data.status);
     $('#editRepairNote').val(data.note || '');
@@ -158,7 +180,17 @@ async function openEditRepairModal(id) {
 }
 
 // ❌ Xóa phiếu sửa
-function deleteRepair(id) {
+function deleteRepair(id, status = null) {
+  // Chặn xóa theo trạng thái (UI) để không tạo lỗi/500 không cần thiết
+  if (status && status !== 'opened') {
+    Swal.fire({
+      icon: 'info',
+      title: 'Không thể xóa',
+      text: 'Chỉ được xóa phiếu ở trạng thái "Mới tiếp nhận".'
+    });
+    return;
+  }
+
   Swal.fire({
     title: 'Bạn có chắc?',
     text: 'Phiếu sửa chữa này sẽ bị xóa vĩnh viễn!',
@@ -177,34 +209,87 @@ function deleteRepair(id) {
         showRepairAlert('Đã xóa phiếu sửa chữa thành công', 'success');
         loadRepairs(currentRepairParams);
       },
-      error: () => showRepairAlert('Lỗi khi xóa phiếu sửa chữa', 'danger')
+      error: (xhr) => {
+        const msg = xhr?.responseJSON?.message || xhr?.responseJSON?.error || 'Không thể xóa phiếu sửa chữa';
+        showRepairAlert(msg, 'danger');
+      }
     });
   });
 }
 
-// 📋 Load danh sách
+// 📋 Load danh sách (có phân trang)
 function loadRepairs(params = {}) {
-  $.get('/repairs/ajax?' + $.param(params), function (data) {
-    const rows = data.map(r => `
-      <tr>
-        <td>${r.deviceCode} - ${r.deviceName}</td>
-        <td>${r.deviceType || ''}</td>
-        <td>${r.hardwareName || ''} (${r.serialNumber || ''})</td>
-        <td>${r.deptName || ''}</td>
-        <td>${r.senderName || ''}</td>
-        <td>${r.brokenDate?.slice(0, 10)}</td>
-        <td>${r.receiverName || ''}</td>
-        <td>${r.repairDate ? r.repairDate.slice(0, 10) : ''}</td>
-        <td>${r.status}</td>
-        <td>${r.note || ''}</td>
-        <td>
-          <button class="btn btn-sm btn-warning me-1" onclick="openEditRepairModal(${r.id})">✏️</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteRepair(${r.id})">❌</button>
-        </td>
-      </tr>
-    `).join('');
-    $('#repairTableBody').html(rows);
+  currentRepairParams = { ...currentRepairParams, ...params };
+
+  $.get('/repairs/ajax', currentRepairParams, function (res) {
+    const repairs = res.data || [];
+    const tbody = $('#repairTableBody');
+    tbody.empty();
+
+    if (repairs.length === 0) {
+      tbody.append('<tr><td colspan="11" class="text-center text-muted">Không có dữ liệu</td></tr>');
+    } else {
+      repairs.forEach((r, index) => {
+        const rowNumber = (currentRepairParams.page - 1) * currentRepairParams.limit + index + 1;
+        const row = `
+          <tr>
+            <td>${r.deviceCode} - ${r.deviceName}</td>
+            <td>${r.deviceType || ''}</td>
+            <td>${r.hardwareName || ''} (${r.serialNumber || ''})</td>
+            <td>${r.deptName || ''}</td>
+            <td>${r.senderName || ''}</td>
+            <td>${r.brokenDate?.slice(0, 10) || ''}</td>
+            <td>${r.receiverName || ''}</td>
+            <td>${r.repairDate ? r.repairDate.slice(0, 10) : ''}</td>
+            <td>${r.status || ''}</td>
+            <td>${r.note || ''}</td>
+            <td>
+              <button class="btn btn-sm btn-warning me-1" onclick="openEditRepairModal(${r.id})">✏️</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteRepair(${r.id}, '${r.status || ''}')">❌</button>
+            </td>
+          </tr>
+        `;
+        tbody.append(row);
+      });
+    }
+
+    renderRepairPagination(res.pagination);
   });
+}
+
+function changePage(page) {
+  currentRepairParams.page = page;
+  loadRepairs(currentRepairParams);
+}
+
+// Hiển thị thanh phân trang
+function renderRepairPagination(pagination) {
+  const container = $('#repairPagination');
+  container.empty();
+
+  if (!pagination || pagination.totalPages <= 1) return;
+
+  const { page, totalPages } = pagination;
+
+  const btn = (label, targetPage, disabled = false, active = false) => `
+    <button
+      class="btn btn-sm ${active ? 'btn-primary' : 'btn-outline-primary'} mx-1"
+      ${disabled ? 'disabled' : ''}
+      onclick="changePage(${targetPage})"
+    >${label}</button>
+  `;
+
+  container.append(btn('«', page - 1, page <= 1));
+
+  // Hiển thị tối đa 5 trang giống assignments
+  const start = Math.max(1, page - 2);
+  const end = Math.min(totalPages, start + 4);
+
+  for (let p = start; p <= end; p++) {
+    container.append(btn(p, p, false, p === page));
+  }
+
+  container.append(btn('»', page + 1, page >= totalPages));
 }
 
 // ✅ Submit tạo
@@ -242,13 +327,17 @@ $('#createRepairForm').on('submit', function (e) {
 $('#editRepairForm').on('submit', function (e) {
   e.preventDefault();
   const id = $('#editRepairId').val();
+
+  const hwVal = $('#editRepairHardwareDropdown').val();
+  const hardwareUnitId = Array.isArray(hwVal) ? (hwVal[0] || null) : (hwVal || null);
+
   const payload = {
     deviceId: $('#editRepairDeviceId').val(),
     brokenDate: $('#editRepairBrokenDate').val(),
     repairDate: $('#editRepairRepairDate').val() || null,
     status: $('#editRepairStatusDropdown').val(),
     note: $('#editRepairNote').val(),
-    hardwareUnitId: $('#editRepairHardwareDropdown').val()?.[0] || null,
+    hardwareUnitId,
     userCreateName: $('#editRepairSenderText').val() || null,
     userResolveId: $('#editRepairReceiverDropdown').val() || null
   };
@@ -278,7 +367,19 @@ $('#editRepairForm').on('submit', function (e) {
 // 🔍 Tìm kiếm theo bộ lọc
 $('#filterRepairForm').on('submit', function (e) {
   e.preventDefault();
-  currentRepairParams = Object.fromEntries(new FormData(this));
+  const formData = Object.fromEntries(new FormData(this));
+  currentRepairParams = {
+    ...currentRepairParams,
+    ...formData,
+    page: 1
+  };
+  loadRepairs(currentRepairParams);
+});
+
+//Reset tìm kiếm
+$('#btnResetRepairFilter').on('click', function () {
+  currentRepairParams = { page: 1, limit: 10, deviceKeyword: '', hardwareKeyword: '', status: 'opened' };
+  $('#filterRepairForm')[0].reset();
   loadRepairs(currentRepairParams);
 });
 

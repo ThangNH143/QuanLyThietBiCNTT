@@ -11,40 +11,62 @@ import {
 } from '../services/repairService.js';
 
 export async function getRepairsList(req, res) {
-  const result = await getRepairs(req.query);
-  res.json(result);
+  try {
+    const result = await getRepairs(req.query);
+    res.json(result);
+  } catch (err) {
+    console.error('getRepairsList error:', err);
+    res.status(500).json({ message: 'Failed to load repairs', error: err.message });
+  }
 }
 
 export async function getRepairDetail(req, res) {
-  const result = await getRepairById(req.params.id);
-  res.json(result);
+  try {
+    const result = await getRepairById(req.params.id);
+    res.json(result);
+  } catch (err) {
+    console.error('getRepairDetail error:', err);
+    res.status(500).json({ message: 'Failed to load repair detail', error: err.message });
+  }
 }
 
 export async function createRepairRecord(req, res) {
-  await createRepair(req.body);
-  res.json({ message: 'Đã tạo phiếu sửa chữa' });
+  try {
+    await createRepair(req.body);
+    res.json({ message: 'Đã tạo phiếu sửa chữa' });
+  } catch (err) {
+    console.error('createRepairRecord error:', err);
+    res.status(500).json({ message: 'Failed to create repair', error: err.message });
+  }
 }
 
 export async function updateRepairRecord(req, res) {
-  await updateRepair(req.params.id, req.body);
-  res.json({ message: 'Đã cập nhật phiếu sửa chữa' });
+  try {
+    await updateRepair(req.params.id, req.body);
+    res.json({ message: 'Đã cập nhật phiếu sửa chữa' });
+  } catch (err) {
+    console.error('updateRepairRecord error:', err);
+    res.status(500).json({ message: 'Failed to update repair', error: err.message });
+  }
 }
 
 export async function deleteRepairRecord(req, res) {
-  const result = await deleteRepair(req.params.id);
-  if (result.success) {
-      // Nếu thành công, trả về 200 kèm message
-      return res.json({ 
-      success: true, 
-      message: result.message 
-      });
-    } else {
-      // QUAN TRỌNG: Nếu thất bại do ràng buộc dữ liệu, phải trả về status lỗi (400 hoặc 409)
-      // Điều này giúp AJAX nhảy vào block .error() thay vì .success()
-      return res.status(400).json({ 
-        success: false, 
-        message: result.message 
-      });
+  try {
+    const result = await deleteRepair(req.params.id);
+
+    if (result?.success) {
+      return res.json({ success: true, message: result.message || 'Đã xóa phiếu sửa chữa' });
+    }
+
+    // Nếu store chủ động trả về thất bại (ràng buộc business)
+    return res.status(400).json({
+      success: false,
+      message: result?.message || 'Không thể xóa phiếu sửa chữa ở trạng thái hiện tại'
+    });
+  } catch (err) {
+    console.error('deleteRepairRecord error:', err);
+    // Lỗi hệ thống / store THROW
+    res.status(500).json({ message: 'Failed to delete repair', error: err.message });
   }
 }
 

@@ -9,6 +9,11 @@ export async function getRepairs(filters = {}) {
     const pool = await poolPromise;
     const request = pool.request();
 
+    // Pagination
+    const page = parseInt(filters.page, 10) || 1;
+    const limit = parseInt(filters.limit, 10) || 10;
+    const offset = (page - 1) * limit;
+
     const allowedStatus = ['opened', 'in-progress', 'completed', 'canceled'];
     const status = allowedStatus.includes(filters.status) ? filters.status : null;
 
@@ -19,10 +24,22 @@ export async function getRepairs(filters = {}) {
         .input('pDeviceKeyword', sql.NVarChar(100), deviceKeyword ? `%${deviceKeyword}%` : null)
         .input('pHardwareKeyword', sql.NVarChar(100), hardwareKeyword ? `%${hardwareKeyword}%` : null)
         .input('pStatus', sql.VarChar(20), status)
-        .execute('sp_Repairs_GetAll');
+        .input('pOffset', sql.Int, offset)
+        .input('pLimit', sql.Int, limit)
+        .execute('sp_Repairs_GetAll_Paged');
 
-    // SP này chỉ trả về 1 tập hợp kết quả
-    return result.recordset;
+    const data = result.recordsets?.[0] || [];
+    const totalItems = result.recordsets?.[1]?.[0]?.total || 0;
+
+    return {
+        data,
+        pagination: {
+            page,
+            limit,
+            totalItems,
+            totalPages: Math.ceil(totalItems / limit)
+        }
+    };
 }
 
 /**
@@ -85,7 +102,26 @@ export async function updateRepair(id, data) {
  */
 export async function deleteRepair(id) {
     const pool = await poolPromise;
-    await pool.request().input('pId', sql.Int, id).execute('sp_Repairs_Delete');
+    try {
+        const result = await pool.request()
+            .input('pId', sql.Int, id)
+            .execute('sp_Repairs_Delete');
+
+        // Ưu tiên format: store trả recordset[0] { success, message }
+        const row = result?.recordset?.[0];
+        if (row && (row.success !== undefined || row.message !== undefined)) {
+            return {
+                success: !!row.success,
+                message: row.message
+            };
+        }
+
+        // Nếu store không trả gì nhưng không throw -> coi là thành công
+        return { success: true, message: 'Đã xóa phiếu sửa chữa' };
+    } catch (err) {
+        // Nếu store THROW -> báo thất bại (controller sẽ trả 500)
+        throw err;
+    }
 }
 
 /**
