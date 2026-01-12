@@ -29,7 +29,21 @@ export async function getHardwareUnitsAjax(req, res) {
       limit: parseInt(req.query.limit) || 10
     };
     const { units, total } = await getHardwareUnits(filters);
-    res.json({ units, total, currentPage: filters.page });
+
+    const totalPages = Math.max(1, Math.ceil((total || 0) / (filters.limit || 10)));
+
+    // Giữ tương thích ngược (units/total/currentPage) + bổ sung pagination giống các module khác.
+    res.json({
+      units,
+      total,
+      currentPage: filters.page,
+      pagination: {
+        page: filters.page,
+        limit: filters.limit,
+        totalRecords: total || 0,
+        totalPages
+      }
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Lỗi khi lấy danh sách thiết bị phần cứng' });
@@ -52,7 +66,8 @@ export async function updateHardwareUnit(req, res) {
     res.json({ message: 'Cập nhật thiết bị phần cứng thành công' });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Lỗi khi cập nhật thiết bị phần cứng' });
+    // Trả thêm thông tin lỗi để dễ debug (VD: trùng mã/serial, sai kiểu dữ liệu...)
+    res.status(500).json({ message: 'Lỗi khi cập nhật thiết bị phần cứng', error: err.message });
   }
 }
 

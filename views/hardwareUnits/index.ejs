@@ -14,7 +14,11 @@
       <div class="col-6 col-md-3"><input name="code" class="form-control" placeholder="Mã thiết bị" /></div>
       <div class="col-6 col-md-3"><input name="serialNumber" class="form-control" placeholder="Số seri" /></div>
       <div class="col-6 col-md-3">
-        <select name="hardwareId" class="form-select" id="filterHardwareDropdown"></select>
+        <!--
+          Backend/service đang lọc theo filters.hardwareName (SP nhận pHardwareName dạng LIKE).
+          Vì vậy dropdown filter sẽ gửi hardwareName (value = tên phần cứng).
+        -->
+        <select name="hardwareName" class="form-select" id="filterHardwareDropdown"></select>
       </div>
       <div class="col-6 col-md-3">
         <select name="filter" class="form-select">

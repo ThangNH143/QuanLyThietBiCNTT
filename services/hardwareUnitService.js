@@ -26,7 +26,7 @@ export async function getHardwareUnits(filters) {
     const result = await request
         .input('pOffset', sql.Int, offset)
         .input('pLimit', sql.Int, limit)
-        .input('pCode', sql.VarChar(10), codeParam)
+        .input('pCode', sql.VarChar(30), codeParam)
         .input('pSerialNumber', sql.VarChar(100), serialNumberParam)
         .input('pHardwareName', sql.NVarChar(100), hardwareNameParam)
         .input('pStartDate', sql.DateTime, startDateParam)
@@ -61,7 +61,7 @@ export async function getHardwareUnits(filters) {
 export async function createHardwareUnitService({ code, serialNumber, hardwareId, purchaseDate, note }) {
     const pool = await poolPromise;
     await pool.request()
-        .input('pCode', sql.VarChar(10), code)
+        .input('pCode', sql.VarChar(30), code)
         .input('pSerialNumber', sql.VarChar(100), serialNumber)
         .input('pHardwareId', sql.Int, hardwareId)
         .input('pPurchaseDate', sql.DateTime, purchaseDate ? new Date(purchaseDate) : null)
@@ -77,7 +77,7 @@ export async function updateHardwareUnitService(id, { code, serialNumber, hardwa
     const pool = await poolPromise;
     await pool.request()
         .input('pId', sql.Int, id)
-        .input('pCode', sql.VarChar(10), code)
+        .input('pCode', sql.VarChar(30), code)
         .input('pSerialNumber', sql.VarChar(100), serialNumber)
         .input('pHardwareId', sql.Int, hardwareId)
         .input('pPurchaseDate', sql.DateTime, purchaseDate ? new Date(purchaseDate) : null)
