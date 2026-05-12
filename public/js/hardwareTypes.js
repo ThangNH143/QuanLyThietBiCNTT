@@ -122,52 +122,18 @@ function renderHardwareTypeTable(hardwareTypes) {
 }
 
 function renderHardwareTypePagination(pagination) {
-  const page = pagination.page;
-  const totalPages = pagination.totalPages || 1;
-
-  $('#hardwareTypePagination').html(`
-    <div class="d-flex flex-wrap justify-content-center gap-2">
-      <button
-        class="btn btn-sm btn-outline-primary"
-        ${page === 1 ? 'disabled' : ''}
-        onclick="changeHardwareTypePage(1)"
-      >
-        ⏮
-      </button>
-
-      <button
-        class="btn btn-sm btn-outline-primary"
-        ${page === 1 ? 'disabled' : ''}
-        onclick="changeHardwareTypePage(${page - 1})"
-      >
-        ⏪
-      </button>
-
-      <span class="align-self-center">
-        Trang ${page} / ${totalPages}
-      </span>
-
-      <button
-        class="btn btn-sm btn-outline-primary"
-        ${page === totalPages ? 'disabled' : ''}
-        onclick="changeHardwareTypePage(${page + 1})"
-      >
-        ⏩
-      </button>
-
-      <button
-        class="btn btn-sm btn-outline-primary"
-        ${page === totalPages ? 'disabled' : ''}
-        onclick="changeHardwareTypePage(${totalPages})"
-      >
-        ⏭
-      </button>
-    </div>
-  `);
+  window.AppPagination.render({
+    containerSelector: '#hardwareTypePagination',
+    pagination,
+    windowSize: 10,
+    onPageChange: changeHardwareTypePage
+  });
 }
 
 function changeHardwareTypePage(page) {
-  currentHardwareTypeParams.page = page;
+  const targetPage = Number(page);
+  if (!targetPage || targetPage < 1) return;
+  currentHardwareTypeParams.page = targetPage;
   loadHardwareTypes(currentHardwareTypeParams);
 }
 
@@ -181,13 +147,8 @@ function loadHardwareTypes(params = {}) {
 
   $.get('/hardware-types/ajax', currentHardwareTypeParams)
     .done(function (res) {
-      const hardwareTypes = res.data || [];
-      const pagination = res.meta?.pagination || {
-        page: 1,
-        limit: currentHardwareTypeParams.limit,
-        totalItems: 0,
-        totalPages: 1
-      };
+      const hardwareTypes = getListFromResponse(res, 'hardwareTypes');
+      const pagination = getPaginationFromResponse(res, currentHardwareTypeParams);
 
       renderHardwareTypeTable(hardwareTypes);
       renderHardwareTypePagination(pagination);

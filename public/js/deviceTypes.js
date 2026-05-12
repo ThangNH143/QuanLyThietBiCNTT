@@ -1,17 +1,16 @@
 let currentDeviceTypeParams = { page: 1, limit: 10 };
-let reopenAfterSubmit = false; // Mặc định không mở lại
+let reopenAfterSubmit = false;
 
 function safeHideModal(modalSelector) {
-  document.activeElement?.blur(); // Xóa focus
+  document.activeElement?.blur();
   $(modalSelector).modal('hide');
 
   setTimeout(() => {
-    $('body').css('overflow', 'auto').removeClass('modal-open'); // ✅ Gỡ class modal-open
-    $('.modal-backdrop').remove(); // ✅ Gỡ nền đen nếu bị dư
+    $('body').css('overflow', 'auto').removeClass('modal-open');
+    $('.modal-backdrop').remove();
 
-    // ✅ Nếu bật cờ mở lại
     if (reopenAfterSubmit) {
-      reopenAfterSubmit = false; // reset lại
+      reopenAfterSubmit = false;
       $(modalSelector).modal('show');
     }
   }, 500);
@@ -25,18 +24,41 @@ function showDeviceTypeAlert(message, type = 'success') {
     </div>
   `;
   $('#deviceTypeAlertContainer').html(alertHtml);
-  setTimeout(() => { $('.alert').alert('close'); }, 5000);
+  setTimeout(() => $('.alert').alert('close'), 5000);
+}
+
+function changeDeviceTypePage(page) {
+  const targetPage = Number(page);
+  if (!targetPage || targetPage < 1) return;
+  currentDeviceTypeParams.page = targetPage;
+  loadDeviceTypes(currentDeviceTypeParams);
+}
+
+function renderDeviceTypePagination(pagination) {
+  window.AppPagination.render({
+    containerSelector: '#deviceTypePagination',
+    pagination,
+    windowSize: 10,
+    onPageChange: changeDeviceTypePage
+  });
 }
 
 function loadDeviceTypes(params = {}) {
-  const query = $.param(params);
-  $.get(`/device-types/ajax?${query}`, function (data) {
-    const rows = Array.isArray(data.deviceTypes)
-      ? data.deviceTypes.map((dt) => `
+  currentDeviceTypeParams = {
+    ...currentDeviceTypeParams,
+    ...params,
+    page: parseInt(params.page ?? currentDeviceTypeParams.page, 10) || 1,
+    limit: parseInt(params.limit ?? currentDeviceTypeParams.limit, 10) || 10
+  };
+
+  $.get('/device-types/ajax', currentDeviceTypeParams, function (res) {
+    const deviceTypes = getListFromResponse(res, 'deviceTypes');
+    const rows = deviceTypes.length
+      ? deviceTypes.map((dt) => `
         <tr>
-          <td><input value="${dt.code}" id="dtype-code-${dt.id}" class="form-control form-control-sm"></td>
-          <td><input value="${dt.name}" id="dtype-name-${dt.id}" class="form-control form-control-sm" /></td>
-          <td><input value="${dt.note}" id="dtype-code-${dt.id}" class="form-control form-control-sm"></td>
+          <td><input value="${dt.code || ''}" id="dtype-code-${dt.id}" class="form-control form-control-sm"></td>
+          <td><input value="${dt.name || ''}" id="dtype-name-${dt.id}" class="form-control form-control-sm" /></td>
+          <td><input value="${dt.note || ''}" id="dtype-note-${dt.id}" class="form-control form-control-sm"></td>
           <td>
             <button class="btn btn-sm btn-warning" onclick="updateDeviceType(${dt.id})">✏️</button>
             <button class="btn btn-sm btn-secondary" onclick="toggleDeviceType(${dt.id})">${dt.isInactive ? '🔄 Kích hoạt' : '🔄 Tạm ngưng'}</button>
@@ -44,38 +66,33 @@ function loadDeviceTypes(params = {}) {
           </td>
         </tr>
       `).join('')
-      : '<tr><td colspan="2">Không có loại thiết bị</td></tr>';
+      : '<tr><td colspan="4" class="text-center text-muted">Không có loại thiết bị</td></tr>';
 
     $('#deviceTypeTable').html(`
       <div class="table-responsive">
-        <table class="table table-bordered table-striped">
+        <table class="table table-bordered table-striped align-middle">
           <thead><tr><th>Mã</th><th>Tên</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
     `);
 
-    const totalPages = Math.ceil(data.total / currentDeviceTypeParams.limit);
-    const p = data.currentPage;
-    $('#deviceTypePagination').html(`
-      <div class="d-flex flex-wrap justify-content-center gap-2">
-        <button class="btn btn-sm btn-outline-primary" ${p===1 ? 'disabled' : ''} onclick="loadDeviceTypes({ ...currentDeviceTypeParams, page: 1 })">⏮</button>
-        <button class="btn btn-sm btn-outline-primary" ${p===1 ? 'disabled' : ''} onclick="loadDeviceTypes({ ...currentDeviceTypeParams, page: ${p - 1} })">⏪</button>
-        <span class="align-self-center">${p} / ${totalPages}</span>
-        <button class="btn btn-sm btn-outline-primary" ${p===totalPages ? 'disabled' : ''} onclick="loadDeviceTypes({ ...currentDeviceTypeParams, page: ${p + 1} })">⏩</button>
-        <button class="btn btn-sm btn-outline-primary" ${p===totalPages ? 'disabled' : ''} onclick="loadDeviceTypes({ ...currentDeviceTypeParams, page: ${totalPages} })">⏭</button>
-      </div>
-    `);
-
-    currentDeviceTypeParams.page = p;
+    const pagination = getPaginationFromResponse(res, currentDeviceTypeParams);
+    currentDeviceTypeParams.page = pagination.page;
+    currentDeviceTypeParams.limit = pagination.limit;
+    renderDeviceTypePagination(pagination);
+  }).fail((xhr) => {
+    showDeviceTypeAlert(xhr.responseJSON?.message || 'Lỗi khi tải danh sách loại thiết bị', 'danger');
+    $('#deviceTypeTable').html('<div class="text-center text-muted py-4">Không có dữ liệu</div>');
+    $('#deviceTypePagination').empty();
   });
 }
 
 $('#createDeviceTypeForm').on('submit', function (e) {
   e.preventDefault();
   const formData = Object.fromEntries(new FormData(this));
-  if (!formData.name || formData.name.length > 100) {
-    showDeviceTypeAlert('Tên loại thiết bị không được trống và tối đa 100 ký tự', 'danger');
+  if (!formData.code || !formData.name || formData.name.length > 100) {
+    showDeviceTypeAlert('Mã và tên loại thiết bị là bắt buộc, tên tối đa 100 ký tự', 'danger');
     return;
   }
 
@@ -84,6 +101,7 @@ $('#createDeviceTypeForm').on('submit', function (e) {
     reopenAfterSubmit = true;
     safeHideModal('#deviceTypeModal');
     $('#createDeviceTypeForm')[0].reset();
+    currentDeviceTypeParams.page = 1;
     loadDeviceTypes(currentDeviceTypeParams);
   }).fail((xhr) => {
     showDeviceTypeAlert(xhr.responseJSON?.message || 'Lỗi khi thêm loại thiết bị', 'danger');
@@ -95,9 +113,10 @@ function updateDeviceType(id) {
     code: $(`#dtype-code-${id}`).val(),
     name: $(`#dtype-name-${id}`).val(),
     note: $(`#dtype-note-${id}`).val()
-  }
+  };
+
   if (!data.code || !data.name) {
-    showDeviceTypeAlert('Tên loại thiết bị không được để trống', 'danger');
+    showDeviceTypeAlert('Mã và tên loại thiết bị là bắt buộc', 'danger');
     return;
   }
 
@@ -147,31 +166,30 @@ function deleteDeviceType(id) {
       success: (res) => {
         showDeviceTypeAlert(res.message, 'success');
         loadDeviceTypes(currentDeviceTypeParams);
-        },
+      },
       error: (xhr) => {
-        showDeviceTypeAlert(xhr.responseJSON?.message || 'Lỗi khi xóa thiết bị', 'danger');
+        showDeviceTypeAlert(xhr.responseJSON?.message || 'Lỗi khi xóa loại thiết bị', 'danger');
       }
     });
   });
 }
 
-// 🔄 Reset bộ lọc
-$('#resetDeviceTypeBtn').on('click', function() {
+$('#resetDeviceTypeBtn').on('click', function () {
   $('#filterDeviceTypeForm')[0].reset();
   currentDeviceTypeParams = { page: 1, limit: 10 };
   loadDeviceTypes(currentDeviceTypeParams);
 });
 
-// 🔍 Tìm kiếm
-$('#filterDeviceTypeForm').on('submit', function(e) {
+$('#filterDeviceTypeForm').on('submit', function (e) {
   e.preventDefault();
-  currentDeviceTypeParams = Object.fromEntries(new FormData(this));
-  currentDeviceTypeParams.page = 1;
-  currentDeviceTypeParams.limit = 10;
+  currentDeviceTypeParams = {
+    ...Object.fromEntries(new FormData(this)),
+    page: 1,
+    limit: 10
+  };
   loadDeviceTypes(currentDeviceTypeParams);
 });
 
-// 🚀 Khởi động
 $(document).ready(() => {
   loadDeviceTypes(currentDeviceTypeParams);
 });

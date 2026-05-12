@@ -1,17 +1,17 @@
 let currentDepartmentParams = { page: 1, limit: 10 };
-let reopenAfterSubmit = false; // Mặc định không mở lại
+let reopenAfterSubmit = false;
+const APP_BASE_PATH = typeof Base_Path !== 'undefined' ? Base_Path : '';
 
 function safeHideModal(modalSelector) {
-  document.activeElement?.blur(); // Xóa focus
+  document.activeElement?.blur();
   $(modalSelector).modal('hide');
 
   setTimeout(() => {
-    $('body').css('overflow', 'auto').removeClass('modal-open'); // ✅ Gỡ class modal-open
-    $('.modal-backdrop').remove(); // ✅ Gỡ nền đen nếu bị dư
+    $('body').css('overflow', 'auto').removeClass('modal-open');
+    $('.modal-backdrop').remove();
 
-    // ✅ Nếu bật cờ mở lại
     if (reopenAfterSubmit) {
-      reopenAfterSubmit = false; // reset lại
+      reopenAfterSubmit = false;
       $(modalSelector).modal('show');
     }
   }, 500);
@@ -25,22 +25,42 @@ function showDepartmentAlert(message, type = 'success') {
     </div>
   `;
   $('#departmentAlertContainer').html(alertHtml);
-
-  // 🔄 Tự động ẩn sau 5 giây
-  setTimeout(() => {
-    $('.alert').alert('close');
-  }, 5000);
+  setTimeout(() => $('.alert').alert('close'), 5000);
 }
 
-// 📦 Load danh sách phòng ban
+function changeDepartmentPage(page) {
+  const targetPage = Number(page);
+  if (!targetPage || targetPage < 1) return;
+  currentDepartmentParams.page = targetPage;
+  loadDepartments(currentDepartmentParams);
+}
+
+function renderDepartmentPagination(pagination) {
+  window.AppPagination.render({
+    containerSelector: '#departmentPagination',
+    pagination,
+    windowSize: 10,
+    onPageChange: changeDepartmentPage
+  });
+}
+
 function loadDepartments(params = {}) {
-  const query = $.param(params);
-  $.get(Base_Path + `/departments/ajax?${query}`, function (data) {
-    const rows = Array.isArray(data.departments)
-      ? data.departments.map((d) => `
+  currentDepartmentParams = {
+    ...currentDepartmentParams,
+    ...params,
+    page: parseInt(params.page ?? currentDepartmentParams.page, 10) || 1,
+    limit: parseInt(params.limit ?? currentDepartmentParams.limit, 10) || 10
+  };
+
+  const query = $.param(currentDepartmentParams);
+
+  $.get(APP_BASE_PATH + `/departments/ajax?${query}`, function (res) {
+    const departments = getListFromResponse(res, 'departments');
+    const rows = departments.length
+      ? departments.map((d) => `
         <tr>
-          <td><input value="${d.code}" id="dept-code-${d.id}" class="form-control form-control-sm"></td>
-          <td><input value="${d.name}" id="dept-name-${d.id}" class="form-control form-control-sm"></td>
+          <td><input value="${d.code || ''}" id="dept-code-${d.id}" class="form-control form-control-sm"></td>
+          <td><input value="${d.name || ''}" id="dept-name-${d.id}" class="form-control form-control-sm"></td>
           <td><input value="${d.note || ''}" id="dept-note-${d.id}" class="form-control form-control-sm"></td>
           <td>
             <button class="btn btn-sm btn-warning" onclick="updateDepartment(${d.id})">✏️</button>
@@ -49,49 +69,48 @@ function loadDepartments(params = {}) {
           </td>
         </tr>
       `).join('')
-      : '<tr><td colspan="3">Không có dữ liệu phòng ban</td></tr>';
+      : '<tr><td colspan="4" class="text-center text-muted">Không có dữ liệu phòng ban</td></tr>';
 
     $('#departmentTable').html(`
-      <table class="table table-bordered table-striped">
-        <thead><tr><th>Mã</th><th>Tên</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="table-responsive">
+        <table class="table table-bordered table-striped align-middle">
+          <thead><tr><th>Mã</th><th>Tên</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     `);
 
-    const totalPages = Math.ceil(data.total / currentDepartmentParams.limit);
-    const p = data.currentPage;
-    $('#departmentPagination').html(`
-      <button class="btn btn-sm btn-outline-primary" ${p === 1 ? 'disabled' : ''} onclick="loadDepartments({ ...currentDepartmentParams, page: 1 })">⏮</button>
-      <button class="btn btn-sm btn-outline-primary" ${p === 1 ? 'disabled' : ''} onclick="loadDepartments({ ...currentDepartmentParams, page: ${p - 1} })">⏪</button>
-      <span>${p} / ${totalPages}</span>
-      <button class="btn btn-sm btn-outline-primary" ${p === totalPages ? 'disabled' : ''} onclick="loadDepartments({ ...currentDepartmentParams, page: ${p + 1} })">⏩</button>
-      <button class="btn btn-sm btn-outline-primary" ${p === totalPages ? 'disabled' : ''} onclick="loadDepartments({ ...currentDepartmentParams, page: ${totalPages} })">⏭</button>
-    `);
-    currentDepartmentParams.page = p;
+    const pagination = getPaginationFromResponse(res, currentDepartmentParams);
+    currentDepartmentParams.page = pagination.page;
+    currentDepartmentParams.limit = pagination.limit;
+    renderDepartmentPagination(pagination);
+  }).fail((xhr) => {
+    showDepartmentAlert(xhr.responseJSON?.message || 'Lỗi khi tải danh sách phòng ban', 'danger');
+    $('#departmentTable').html('<div class="text-center text-muted py-4">Không có dữ liệu</div>');
+    $('#departmentPagination').empty();
   });
 }
 
-// ➕ Tạo phòng ban
 $('#createDepartmentForm').on('submit', function (e) {
   e.preventDefault();
   const formData = Object.fromEntries(new FormData(this));
   if (!formData.code || !formData.name) {
-    alert('Vui lòng nhập mã và tên phòng ban');
+    showDepartmentAlert('Vui lòng nhập mã và tên phòng ban', 'danger');
     return;
   }
 
-  $.post(Base_Path + '/departments', formData, function (res) {
+  $.post(APP_BASE_PATH + '/departments', formData, function (res) {
     showDepartmentAlert(res.message, 'success');
     reopenAfterSubmit = true;
     safeHideModal('#departmentModal');
     $('#createDepartmentForm')[0].reset();
+    currentDepartmentParams.page = 1;
     loadDepartments(currentDepartmentParams);
   }).fail((xhr) => {
     showDepartmentAlert(xhr.responseJSON?.message || 'Lỗi khi thêm phòng ban', 'danger');
   });
 });
 
-// ✏️ Cập nhật phòng ban
 function updateDepartment(id) {
   const data = {
     code: $(`#dept-code-${id}`).val(),
@@ -105,7 +124,7 @@ function updateDepartment(id) {
   }
 
   $.ajax({
-    url: Base_Path + `/departments/${id}/update`,
+    url: APP_BASE_PATH + `/departments/${id}/update`,
     type: 'PUT',
     data,
     success: (res) => {
@@ -113,26 +132,25 @@ function updateDepartment(id) {
       loadDepartments(currentDepartmentParams);
     },
     error: (xhr) => {
-    showDepartmentAlert(xhr.responseJSON?.message || 'Lỗi khi cập nhật phòng ban', 'danger');
+      showDepartmentAlert(xhr.responseJSON?.message || 'Lỗi khi cập nhật phòng ban', 'danger');
     }
   });
-};
+}
 
-// 🔄 Tạm ngưng / kích hoạt
 function toggleDepartment(id) {
   $.ajax({
-    url: Base_Path + `/departments/${id}/toggle`,
+    url: APP_BASE_PATH + `/departments/${id}/toggle`,
     type: 'PUT',
     success: (res) => {
       showDepartmentAlert(res.message, 'success');
       loadDepartments(currentDepartmentParams);
     },
-    error: (xhr) => {showDepartmentAlert(xhr.responseJSON?.message || 'Lỗi khi cập nhật trạng thái', 'danger');
+    error: (xhr) => {
+      showDepartmentAlert(xhr.responseJSON?.message || 'Lỗi khi cập nhật trạng thái', 'danger');
     }
   });
-};
+}
 
-// ❌ Xóa phòng ban
 function deleteDepartment(id) {
   Swal.fire({
     title: 'Bạn có chắc?',
@@ -144,36 +162,37 @@ function deleteDepartment(id) {
     confirmButtonColor: '#d33'
   }).then((result) => {
     if (!result.isConfirmed) return;
-  $.ajax({
-    url: Base_Path + `/departments/${id}/delete`,
-    type: 'DELETE',
-    success: (res) => {
-      showDepartmentAlert(res.message, 'success');
-      loadDepartments(currentDepartmentParams);
-    },
-    error: (xhr) => {showDepartmentAlert(xhr.responseJSON?.message || 'Lỗi khi cập nhật trạng thái', 'danger');}
+
+    $.ajax({
+      url: APP_BASE_PATH + `/departments/${id}/delete`,
+      type: 'DELETE',
+      success: (res) => {
+        showDepartmentAlert(res.message, 'success');
+        loadDepartments(currentDepartmentParams);
+      },
+      error: (xhr) => {
+        showDepartmentAlert(xhr.responseJSON?.message || 'Lỗi khi xóa phòng ban', 'danger');
+      }
     });
   });
 }
 
-// 🔍 Tìm kiếm
 $('#filterDepartmentForm').on('submit', function (e) {
   e.preventDefault();
-  currentDepartmentParams = Object.fromEntries(new FormData(this));
-  currentDepartmentParams.page = 1;
-  currentDepartmentParams.limit = 10;
+  currentDepartmentParams = {
+    ...Object.fromEntries(new FormData(this)),
+    page: 1,
+    limit: 10
+  };
   loadDepartments(currentDepartmentParams);
 });
 
-// 🔄 Reset lọc
 $('#resetDepartmentBtn').on('click', function () {
   $('#filterDepartmentForm')[0].reset();
   currentDepartmentParams = { page: 1, limit: 10 };
   loadDepartments(currentDepartmentParams);
 });
 
-
-// 🚀 Khởi động
 $(document).ready(() => {
   loadDepartments(currentDepartmentParams);
 });

@@ -1,27 +1,53 @@
 let currentParams = { page: 1, limit: 10 };
-let reopenAfterSubmit = false; // Mặc định không mở lại
+let reopenAfterSubmit = false;
 
 function safeHideModal(modalSelector) {
-  document.activeElement?.blur(); // Xóa focus
+  document.activeElement?.blur();
   $(modalSelector).modal('hide');
 
   setTimeout(() => {
-    $('body').css('overflow', 'auto').removeClass('modal-open'); // ✅ Gỡ class modal-open
-    $('.modal-backdrop').remove(); // ✅ Gỡ nền đen nếu bị dư
+    $('body').css('overflow', 'auto').removeClass('modal-open');
+    $('.modal-backdrop').remove();
 
-    // ✅ Nếu bật cờ mở lại
     if (reopenAfterSubmit) {
-      reopenAfterSubmit = false; // reset lại
+      reopenAfterSubmit = false;
       $(modalSelector).modal('show');
     }
   }, 500);
 }
 
+function showDeviceAlert(message, type = 'success') {
+  const alertHtml = `
+    <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+      <strong>Lưu ý:</strong> ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  `;
+  $('#deviceAlertContainer').html(alertHtml);
+  setTimeout(() => $('.alert').alert('close'), 5000);
+}
+
+function changeDevicePage(page) {
+  const targetPage = Number(page);
+  if (!targetPage || targetPage < 1) return;
+  currentParams.page = targetPage;
+  loadDevices(currentParams);
+}
+
+function renderDevicePagination(pagination) {
+  window.AppPagination.render({
+    containerSelector: '#pagination',
+    pagination,
+    windowSize: 10,
+    onPageChange: changeDevicePage
+  });
+}
+
 function loadDeviceTypesSync() {
-  return $.get('/device-types/ajax').then(data => {
+  return $.get('/device-types/ajax', { page: 1, limit: 1000, filter: 'active' }).then(data => {
     const dropdown = $('#deviceTypeDropdown');
     const modalDropdown = $('#modalDeviceType');
-    const deviceTypes = Array.isArray(data) ? data : data.deviceTypes || [];
+    const deviceTypes = getListFromResponse(data, 'deviceTypes');
 
     dropdown.empty().append(`<option value="">-- Loại thiết bị --</option>`);
     modalDropdown.empty();
@@ -34,42 +60,24 @@ function loadDeviceTypesSync() {
     dropdown.select2({ width: '100%', placeholder: 'Chọn loại thiết bị', allowClear: true });
     modalDropdown.select2({ dropdownParent: $('#deviceModal'), width: '100%' });
 
-    return deviceTypes; // ✅ trả về mảng đã load
+    return deviceTypes;
   });
 }
 
-function showDeviceAlert(message, type = 'success') {
-  const alertHtml = `
-    <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-      <strong>Lưu ý:</strong> ${message}
-      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    </div>
-  `;
-  $('#deviceAlertContainer').html(alertHtml);
-
-  // 🕒 Tự động ẩn sau 5 giây
-  setTimeout(() => {
-    $('.alert').alert('close');
-  }, 5000);
-}
-
-// 🔧 Load loại thiết bị cho dropdown lọc và modal
 function loadDeviceTypes() {
-  $.get('/device-types/ajax', function(data) {
+  $.get('/device-types/ajax', { page: 1, limit: 1000, filter: 'active' }, function(data) {
     const dropdown = $('#deviceTypeDropdown');
     const modalDropdown = $('#modalDeviceType');
+    const deviceTypes = getListFromResponse(data, 'deviceTypes');
 
     dropdown.empty().append(`<option value="">-- Loại thiết bị --</option>`);
     modalDropdown.empty();
-
-    const deviceTypes = Array.isArray(data) ? data : data.deviceTypes || [];
 
     deviceTypes.forEach(dt => {
       dropdown.append(`<option value="${dt.id}">${dt.name}</option>`);
       modalDropdown.append(`<option value="${dt.id}">${dt.name}</option>`);
     });
 
-    // Nếu muốn dùng Select2 như các module khác:
     $('#deviceTypeDropdown')
       .select2({ width: '100%', placeholder: 'Chọn loại thiết bị', allowClear: true })
       .trigger('change');
@@ -78,55 +86,62 @@ function loadDeviceTypes() {
   });
 }
 
-// 📋 Load danh sách thiết bị
 function loadDevices(params = {}) {
+  currentParams = {
+    ...currentParams,
+    ...params,
+    page: parseInt(params.page ?? currentParams.page, 10) || 1,
+    limit: parseInt(params.limit ?? currentParams.limit, 10) || 10
+  };
+
   loadDeviceTypesSync().then(deviceTypes => {
-    const query = $.param(params);
-    $.get(`/devices/ajax?${query}`, function(data) {
-      const rows = data.devices.map(d => `
-        <tr>
-          <td><input value="${d.code}" id="code-${d.id}" class="form-control form-control-sm"></td>
-          <td><input value="${d.name}" id="name-${d.id}" class="form-control form-control-sm"></td>
-          <td>
-            <select id="type-${d.id}" class="form-control form-control-sm">
-              ${deviceTypes.map(dt => {
-                const selected = dt.id == d.deviceTypeId ? 'selected' : '';
-                return `<option value="${dt.id}" ${selected}>${dt.name}</option>`;
-              }).join('')}
-            </select>
-          </td>
-          <td><input type="date" value="${d.purchaseDate?.split('T')[0]}" id="date-${d.id}" class="form-control form-control-sm"></td>
-          <td><input value="${d.note || ''}" id="note-${d.id}" class="form-control form-control-sm"></td>
-          <td>
-            <button class="btn btn-sm btn-warning" onclick="updateDevice(${d.id})">✏️</button>
-            <button class="btn btn-sm btn-secondary" onclick="toggleDevice(${d.id})">${d.isInactive ? '🔄 Kích hoạt' : '🔄 Tạm ngưng'}</button>
-            <button class="btn btn-sm btn-danger" onclick="deleteDevice(${d.id})">❌</button>
-          </td>
-        </tr>
-      `).join('');
+    $.get('/devices/ajax', currentParams, function(res) {
+      const devices = getListFromResponse(res, 'devices');
+      const rows = devices.length
+        ? devices.map(d => `
+          <tr>
+            <td><input value="${d.code || ''}" id="code-${d.id}" class="form-control form-control-sm"></td>
+            <td><input value="${d.name || ''}" id="name-${d.id}" class="form-control form-control-sm"></td>
+            <td>
+              <select id="type-${d.id}" class="form-control form-control-sm">
+                ${deviceTypes.map(dt => {
+                  const selected = dt.id == d.deviceTypeId ? 'selected' : '';
+                  return `<option value="${dt.id}" ${selected}>${dt.name}</option>`;
+                }).join('')}
+              </select>
+            </td>
+            <td><input type="date" value="${d.purchaseDate?.split('T')[0] || ''}" id="date-${d.id}" class="form-control form-control-sm"></td>
+            <td><input value="${d.note || ''}" id="note-${d.id}" class="form-control form-control-sm"></td>
+            <td>
+              <button class="btn btn-sm btn-warning" onclick="updateDevice(${d.id})">✏️</button>
+              <button class="btn btn-sm btn-secondary" onclick="toggleDevice(${d.id})">${d.isInactive ? '🔄 Kích hoạt' : '🔄 Tạm ngưng'}</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteDevice(${d.id})">❌</button>
+            </td>
+          </tr>
+        `).join('')
+        : '<tr><td colspan="6" class="text-center text-muted">Không có dữ liệu</td></tr>';
 
       $('#deviceTable').html(`
-        <table class="table table-bordered table-striped">
-          <thead><tr><th>Mã</th><th>Tên</th><th>Loại</th><th>Ngày mua</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
+        <div class="table-responsive">
+          <table class="table table-bordered table-striped align-middle">
+            <thead><tr><th>Mã</th><th>Tên</th><th>Loại</th><th>Ngày mua</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
       `);
 
-      const totalPages = Math.ceil(data.total / currentParams.limit);
-      const p = data.currentPage;
-      $('#pagination').html(`
-        <button class="btn btn-sm btn-outline-primary me-2" ${p === 1 ? 'disabled' : ''} onclick="loadDevices({ ...currentParams, page: 1 })">⏮</button>
-        <button class="btn btn-sm btn-outline-primary me-2" ${p === 1 ? 'disabled' : ''} onclick="loadDevices({ ...currentParams, page: ${p - 1} })">⏪</button>
-        <span>${p} / ${totalPages}</span>
-        <button class="btn btn-sm btn-outline-primary ms-2" ${p === totalPages ? 'disabled' : ''} onclick="loadDevices({ ...currentParams, page: ${p + 1} })">⏩</button>
-        <button class="btn btn-sm btn-outline-primary ms-2" ${p === totalPages ? 'disabled' : ''} onclick="loadDevices({ ...currentParams, page: ${totalPages} })">⏭</button>
-      `);
-      currentParams.page = p;
+      const pagination = getPaginationFromResponse(res, currentParams);
+      currentParams.page = pagination.page;
+      currentParams.limit = pagination.limit;
+      renderDevicePagination(pagination);
+    }).fail((xhr) => {
+      showDeviceAlert(xhr.responseJSON?.message || 'Lỗi khi tải danh sách thiết bị', 'danger');
+      $('#deviceTable').html('<div class="text-center text-muted py-4">Không có dữ liệu</div>');
+      $('#pagination').empty();
     });
   });
 }
 
-// ➕ Thêm thiết bị
 $('#createDeviceForm').on('submit', function(e) {
   e.preventDefault();
   const formData = Object.fromEntries(new FormData(this));
@@ -139,13 +154,13 @@ $('#createDeviceForm').on('submit', function(e) {
     reopenAfterSubmit = true;
     safeHideModal('#deviceModal');
     $('#createDeviceForm')[0].reset();
+    currentParams.page = 1;
     loadDevices(currentParams);
   }).fail((xhr) => {
-  showDeviceAlert(xhr.responseJSON?.message || 'Lỗi khi thêm thiết bị', 'danger');
+    showDeviceAlert(xhr.responseJSON?.message || 'Lỗi khi thêm thiết bị', 'danger');
   });
 });
 
-// ✏️ Sửa thiết bị
 function updateDevice(id) {
   const data = {
     code: $(`#code-${id}`).val(),
@@ -167,12 +182,11 @@ function updateDevice(id) {
       loadDevices(currentParams);
     },
     error: (xhr) => {
-    showDeviceAlert(xhr.responseJSON?.message || 'Lỗi khi cập nhật thiết bị', 'danger');
+      showDeviceAlert(xhr.responseJSON?.message || 'Lỗi khi cập nhật thiết bị', 'danger');
     }
   });
 }
 
-// 🔄 Tạm ngưng / kích hoạt
 function toggleDevice(id) {
   $.ajax({
     url: `/devices/${id}/toggle`,
@@ -182,16 +196,15 @@ function toggleDevice(id) {
       loadDevices(currentParams);
     },
     error: (xhr) => {
-    showDeviceAlert(xhr.responseJSON?.message || 'Lỗi khi tạm ngưng thiết bị', 'danger');
+      showDeviceAlert(xhr.responseJSON?.message || 'Lỗi khi tạm ngưng thiết bị', 'danger');
     }
   });
 }
 
-// ❌ Xóa thiết bị
 function deleteDevice(id) {
   Swal.fire({
     title: 'Bạn có chắc?',
-    text: 'Phòng ban này sẽ bị xóa vĩnh viễn!',
+    text: 'Thiết bị này sẽ bị xóa vĩnh viễn!',
     icon: 'warning',
     showCancelButton: true,
     confirmButtonText: 'Xóa',
@@ -200,37 +213,36 @@ function deleteDevice(id) {
   }).then((result) => {
     if (!result.isConfirmed) return;
 
-  $.ajax({
-    url: `/devices/${id}/delete`,
-    type: 'DELETE',
-    success: (res) => {
-      showDeviceAlert(res.message, 'success');
-      loadDevices(currentParams);
-    },
-    error: (xhr) => {
-      showDeviceAlert(xhr.responseJSON?.message || 'Lỗi khi xóa thiết bị', 'danger');
+    $.ajax({
+      url: `/devices/${id}/delete`,
+      type: 'DELETE',
+      success: (res) => {
+        showDeviceAlert(res.message, 'success');
+        loadDevices(currentParams);
+      },
+      error: (xhr) => {
+        showDeviceAlert(xhr.responseJSON?.message || 'Lỗi khi xóa thiết bị', 'danger');
       }
     });
   });
 }
 
-// 🔄 Reset bộ lọc
 $('#resetBtn').on('click', function() {
   $('#filterForm')[0].reset();
   currentParams = { page: 1, limit: 10 };
   loadDevices(currentParams);
 });
 
-// 🔍 Tìm kiếm
 $('#filterForm').on('submit', function(e) {
   e.preventDefault();
-  currentParams = Object.fromEntries(new FormData(this));
-  currentParams.page = 1;
-  currentParams.limit = 10;
+  currentParams = {
+    ...Object.fromEntries(new FormData(this)),
+    page: 1,
+    limit: 10
+  };
   loadDevices(currentParams);
 });
 
-// 🚀 Khởi động
 $(document).ready(() => {
   loadDevices(currentParams);
 });

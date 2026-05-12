@@ -1,30 +1,11 @@
+// public/js/hardwares.js
+// Compatible with both legacy API responses and standardized API responses.
+
 let currentHardwareParams = {
   page: 1,
   limit: 10,
   filter: 'all'
 };
-
-function getListFromResponse(res, legacyKey) {
-  if (Array.isArray(res?.[legacyKey])) return res[legacyKey];
-  if (Array.isArray(res?.data)) return res.data;
-  return [];
-}
-
-function getPaginationFromResponse(res, fallbackParams = {}) {
-  if (res?.meta?.pagination) return res.meta.pagination;
-
-  const page = parseInt(res?.currentPage, 10) || parseInt(fallbackParams.page, 10) || 1;
-  const limit = parseInt(fallbackParams.limit, 10) || 10;
-  const totalItems = parseInt(res?.total, 10) || 0;
-  const totalPages = Math.max(Math.ceil(totalItems / limit), 1);
-
-  return {
-    page,
-    limit,
-    totalItems,
-    totalPages
-  };
-}
 
 function getErrorMessage(xhr, fallback = 'Có lỗi xảy ra') {
   return xhr.responseJSON?.message || fallback;
@@ -129,52 +110,21 @@ function renderHardwareTable(hardwares) {
 
       return `
         <tr>
-          <td>
-            <input
-              value="${escapeHtml(code)}"
-              id="hw-code-${id}"
-              class="form-control form-control-sm"
-            />
-          </td>
-
-          <td>
-            <input
-              value="${escapeHtml(name)}"
-              id="hw-name-${id}"
-              class="form-control form-control-sm"
-            />
-          </td>
-
-          <td>
-            ${escapeHtml(hardwareTypeName)}
-          </td>
-
-          <td>
-            <input
-              value="${escapeHtml(note)}"
-              id="hw-note-${id}"
-              class="form-control form-control-sm"
-            />
-          </td>
-
+          <td><input value="${escapeHtml(code)}" id="hw-code-${id}" class="form-control form-control-sm" /></td>
+          <td><input value="${escapeHtml(name)}" id="hw-name-${id}" class="form-control form-control-sm" /></td>
+          <td>${escapeHtml(hardwareTypeName)}</td>
+          <td><input value="${escapeHtml(note)}" id="hw-note-${id}" class="form-control form-control-sm" /></td>
           <td>
             <span class="badge ${isInactive ? 'bg-secondary' : 'bg-success'}">
               ${isInactive ? 'Tạm ngưng' : 'Hoạt động'}
             </span>
           </td>
-
           <td class="text-nowrap">
-            <button class="btn btn-sm btn-warning" onclick="updateHardware(${id})">
-              ✏️
-            </button>
-
+            <button class="btn btn-sm btn-warning" onclick="updateHardware(${id})">✏️</button>
             <button class="btn btn-sm btn-secondary" onclick="toggleHardware(${id})">
               ${isInactive ? '🔄 Kích hoạt' : '🔄 Tạm ngưng'}
             </button>
-
-            <button class="btn btn-sm btn-danger" onclick="deleteHardware(${id})">
-              ❌
-            </button>
+            <button class="btn btn-sm btn-danger" onclick="deleteHardware(${id})">❌</button>
           </td>
         </tr>
       `;
@@ -201,52 +151,19 @@ function renderHardwareTable(hardwares) {
 }
 
 function renderHardwarePagination(pagination) {
-  const page = pagination.page || 1;
-  const totalPages = pagination.totalPages || 1;
-
-  $('#hardwarePagination').html(`
-    <div class="d-flex flex-wrap justify-content-center gap-2">
-      <button
-        class="btn btn-sm btn-outline-primary"
-        ${page === 1 ? 'disabled' : ''}
-        onclick="changeHardwarePage(1)"
-      >
-        ⏮
-      </button>
-
-      <button
-        class="btn btn-sm btn-outline-primary"
-        ${page === 1 ? 'disabled' : ''}
-        onclick="changeHardwarePage(${page - 1})"
-      >
-        ⏪
-      </button>
-
-      <span class="align-self-center">
-        Trang ${page} / ${totalPages}
-      </span>
-
-      <button
-        class="btn btn-sm btn-outline-primary"
-        ${page === totalPages ? 'disabled' : ''}
-        onclick="changeHardwarePage(${page + 1})"
-      >
-        ⏩
-      </button>
-
-      <button
-        class="btn btn-sm btn-outline-primary"
-        ${page === totalPages ? 'disabled' : ''}
-        onclick="changeHardwarePage(${totalPages})"
-      >
-        ⏭
-      </button>
-    </div>
-  `);
+  window.AppPagination.render({
+    containerSelector: '#hardwarePagination',
+    pagination,
+    windowSize: 10,
+    onPageChange: changeHardwarePage
+  });
 }
 
 function changeHardwarePage(page) {
-  currentHardwareParams.page = page;
+  const targetPage = Number(page);
+  if (!targetPage || targetPage < 1) return;
+
+  currentHardwareParams.page = targetPage;
   loadHardwares(currentHardwareParams);
 }
 

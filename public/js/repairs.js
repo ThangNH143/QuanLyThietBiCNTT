@@ -264,32 +264,12 @@ function changePage(page) {
 
 // Hiển thị thanh phân trang
 function renderRepairPagination(pagination) {
-  const container = $('#repairPagination');
-  container.empty();
-
-  if (!pagination || pagination.totalPages <= 1) return;
-
-  const { page, totalPages } = pagination;
-
-  const btn = (label, targetPage, disabled = false, active = false) => `
-    <button
-      class="btn btn-sm ${active ? 'btn-primary' : 'btn-outline-primary'} mx-1"
-      ${disabled ? 'disabled' : ''}
-      onclick="changePage(${targetPage})"
-    >${label}</button>
-  `;
-
-  container.append(btn('«', page - 1, page <= 1));
-
-  // Hiển thị tối đa 5 trang giống assignments
-  const start = Math.max(1, page - 2);
-  const end = Math.min(totalPages, start + 4);
-
-  for (let p = start; p <= end; p++) {
-    container.append(btn(p, p, false, p === page));
-  }
-
-  container.append(btn('»', page + 1, page >= totalPages));
+  window.AppPagination.render({
+    containerSelector: '#repairPagination',
+    pagination,
+    windowSize: 10,
+    onPageChange: changePage
+  });
 }
 
 // ✅ Submit tạo

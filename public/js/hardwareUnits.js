@@ -3,97 +3,22 @@ let hardwareOptions = []; // Giữ danh sách phần cứng
 let reopenAfterSubmit = false; // Mặc định không mở lại
 
 // =========================
-// Pagination helpers (giống deviceHardwareUnits)
+// Pagination helpers dùng chung
 // =========================
 
 function changeHardwareUnitPage(page) {
-  const p = parseInt(page, 10);
-  if (!p || p < 1) return;
-  loadHardwareUnits({ page: p });
+  const targetPage = Number(page);
+  if (!targetPage || targetPage < 1) return;
+  loadHardwareUnits({ page: targetPage });
 }
 
 function renderHardwareUnitPagination(pagination) {
-  const container = $('#hardwareUnitPagination');
-  if (!pagination) {
-    container.empty();
-    return;
-  }
-
-  const totalPages = parseInt(pagination.totalPages, 10) || 1;
-  const currentPage = parseInt(pagination.page, 10) || 1;
-
-  if (totalPages <= 1) {
-    container.empty();
-    return;
-  }
-
-  // Hiển thị tối đa 10 trang: 5 trước + 5 sau (điều chỉnh ở biên)
-  const maxPagesToShow = 10;
-  let start = Math.max(1, currentPage - 5);
-  let end = Math.min(totalPages, start + maxPagesToShow - 1);
-  // Nếu chưa đủ 10 trang ở phía sau, kéo start về phía trước
-  start = Math.max(1, end - maxPagesToShow + 1);
-
-  const items = [];
-
-  // Trang đầu
-  items.push(`
-    <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
-      <a class="page-link" href="javascript:void(0)" onclick="changeHardwareUnitPage(1)">Trang đầu</a>
-    </li>
-  `);
-
-  // Trước
-  items.push(`
-    <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
-      <a class="page-link" href="javascript:void(0)" onclick="changeHardwareUnitPage(${currentPage - 1})">Trước</a>
-    </li>
-  `);
-
-  // Ellipsis trái
-  if (start > 1) {
-    items.push(`
-      <li class="page-item disabled"><span class="page-link">...</span></li>
-    `);
-  }
-
-  // Các số trang
-  for (let i = start; i <= end; i++) {
-    items.push(`
-      <li class="page-item ${i === currentPage ? 'active' : ''}">
-        <a class="page-link" href="javascript:void(0)" onclick="changeHardwareUnitPage(${i})">${i}</a>
-      </li>
-    `);
-  }
-
-  // Ellipsis phải
-  if (end < totalPages) {
-    items.push(`
-      <li class="page-item disabled"><span class="page-link">...</span></li>
-    `);
-  }
-
-  // Sau
-  items.push(`
-    <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
-      <a class="page-link" href="javascript:void(0)" onclick="changeHardwareUnitPage(${currentPage + 1})">Sau</a>
-    </li>
-  `);
-
-  // Trang cuối
-  items.push(`
-    <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
-      <a class="page-link" href="javascript:void(0)" onclick="changeHardwareUnitPage(${totalPages})">Trang cuối</a>
-    </li>
-  `);
-
-  container.html(`
-    <nav aria-label="Hardware units pagination">
-      <ul class="pagination pagination-sm justify-content-center flex-wrap">
-        ${items.join('')}
-      </ul>
-    </nav>
-  `);
+  window.AppPagination.render({
+    containerSelector: '#hardwareUnitPagination',
+    pagination,
+    windowSize: 10,
+    onPageChange: changeHardwareUnitPage
+  });
 }
 
 function safeHideModal(modalSelector) {
@@ -130,7 +55,7 @@ function showHardwareUnitAlert(message, type = 'success') {
 // 📥 Load dropdown phần cứng cho modal thêm
 function loadHardwareDropdown() {
   $.get('/hardwares/ajax?page=1&limit=100', function (data) {
-    hardwareOptions = data.hardwares; // ✅ Lưu danh sách để dùng cho dropdown từng dòng
+    hardwareOptions = getListFromResponse(data, 'hardwares'); // ✅ Lưu danh sách để dùng cho dropdown từng dòng
 
     // Modal
     const modalDropdown = $('#modalHardwareDropdown');
@@ -177,7 +102,7 @@ function loadHardwareUnits(params = {}) {
   };
 
   loadHardwaresSync().then((data) => {
-    hardwareOptions = Array.isArray(data.hardwares) ? data.hardwares : [];
+    hardwareOptions = getListFromResponse(data, 'hardwares');
 
     // ✅ Render dropdown modal
     const modalDropdown = $('#modalHardwareDropdown');
@@ -214,8 +139,9 @@ function loadHardwareUnits(params = {}) {
 
     // ✅ Sau khi dropdown đã có → gọi dữ liệu bảng
     $.get(`/hardware-units/ajax?${$.param(currentHardwareUnitParams)}`, function (data) {
-      const rows = Array.isArray(data.units)
-        ? data.units.map(unit => `
+      const units = getListFromResponse(data, 'units');
+      const rows = units.length
+        ? units.map(unit => `
           <tr>
             <td><input value="${unit.code}" id="unit-code-${unit.id}" class="form-control form-control-sm"></td>
             <td><input value="${unit.serialNumber}" id="unit-serial-${unit.id}" class="form-control form-control-sm"></td>
@@ -252,12 +178,7 @@ function loadHardwareUnits(params = {}) {
         allowClear: true
       });
 
-      const pagination = data.pagination || {
-        page: data.currentPage || currentHardwareUnitParams.page,
-        limit: currentHardwareUnitParams.limit,
-        totalRecords: data.total || 0,
-        totalPages: Math.max(1, Math.ceil((data.total || 0) / currentHardwareUnitParams.limit))
-      };
+      const pagination = getPaginationFromResponse(data, currentHardwareUnitParams);
       currentHardwareUnitParams.page = pagination.page;
       renderHardwareUnitPagination(pagination);
     });

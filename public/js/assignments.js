@@ -169,19 +169,12 @@ function loadDeviceAssignments(params = {}) {
 }
 // Hiển thị thanh phân trang
 function renderPagination(pagination) {
-  const container = $('#assignmentPagination');
-  container.empty();
-  if (!pagination || pagination.totalPages <= 1) return;
-
-  let html = `<nav><ul class="pagination pagination-sm mb-0">`;
-  html += `<li class="page-item ${pagination.page === 1 ? 'disabled' : ''}"><a class="page-link" href="javascript:void(0)" onclick="changePage(${pagination.page - 1})">Trước</a></li>`;
-
-  for (let i = 1; i <= pagination.totalPages; i++) {
-    html += `<li class="page-item ${pagination.page === i ? 'active' : ''}"><a class="page-link" href="javascript:void(0)" onclick="changePage(${i})">${i}</a></li>`;
-  }
-
-  html += `<li class="page-item ${pagination.page === pagination.totalPages ? 'disabled' : ''}"><a class="page-link" href="javascript:void(0)" onclick="changePage(${pagination.page + 1})">Sau</a></li></ul></nav>`;
-  container.append(html);
+  window.AppPagination.render({
+    containerSelector: '#assignmentPagination',
+    pagination,
+    windowSize: 10,
+    onPageChange: changePage
+  });
 }
 
 function changePage(page) {
