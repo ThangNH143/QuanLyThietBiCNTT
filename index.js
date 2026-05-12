@@ -4,9 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import session from 'express-session';
 import 'dotenv/config';
-// import ConnectMSSQL from 'connect-mssql';
-// Import Session Store tuỳ chỉnh mới
 import MSSQLStore from './utils/sessionStore.js'; 
+import errorHandler from './middleware/errorHandler.js';
 
 import deviceRoutes from './routes/device.js';
 import departmentRoutes from './routes/department.js';
@@ -21,41 +20,15 @@ import deviceHardwareRoutes  from './routes/deviceHardwareUnit.js';
 const app = express();
 const PORT = 3000;
 
-//Đọc biến môi trường cho base path
-//Nếu biến môi trường không tồn tại, mặc định chuỗi rỗng (cho môi trường phát triển/gốc)
+//Đọc biến môi trường cho base path, nếu biến môi trường không tồn tại, mặc định chuỗi rỗng (cho môi trường phát triển/gốc)
 const App_Base_Path = process.env.App_Base_Path || '';
 // Khởi tạo Session Store mới
 const sessionStore = new MSSQLStore();
-
-// const MSSQLStore = ConnectMSSQL(session);
-
-// const sessionDbConfig = {
-//   user: process.env.DB_USER, 
-//   password: process.env.DB_PASSWORD, 
-//   server: process.env.DB_HOST, 
-//   port: parseInt(process.env.DB_PORT, 10), // <-- THÊM PORT VÀ PARSE INTEGER
-//   database: process.env.DB_DATABASE,
-//   options: {
-//     // Tùy chọn quan trọng nếu bạn đang dùng SQL Server Local hoặc Self-signed Certificate
-//     trustServerCertificate: true, 
-//     enableArithAbort: true,
-//         // Dòng này cần phải khớp với DB_ENCRYPT
-//     encrypt: process.env.DB_ENCRYPT === 'true'
-//   },
-// };
-
-// const sessionStore = new MSSQLStore({
-//   config: sessionDbConfig,
-//   table: 'Sessions', // Tên bảng sẽ được tạo tự động trong DB của bạn
-//   ttl: 60 * 60 * 1000, // Time-to-live: Session tồn tại 1 giờ (60 phút * 60 giây * 1000 ms)
-//   autoRemove: true
-// });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Middleware & config
-// index.js (Khoảng dòng 30)
 app.use((req,res,next) => {
   res.locals.basePath = App_Base_Path; //Gán res.locals để có thể truy cập trong EJS
 
@@ -72,17 +45,6 @@ app.use((req,res,next) => {
 });
 
 app.use((req, res, next) => {
-  // console.log('--- Comprehensive Request Log ---');
-  // console.log(`Timestamp: ${new Date().toISOString()}`);
-  // console.log(`Method: ${req.method}`);
-  // console.log(`Original URL (req.originalUrl): ${req.originalUrl}`); // URL gốc trước khi được Express xử lý
-  // console.log(`Path (req.path): ${req.path}`);                           // Đường dẫn đã được chuẩn hóa bởi Express
-  // console.log(`URL (req.url): ${req.url}`);                             // Đường dẫn được gửi bởi client (hoặc proxy)
-  // console.log('Headers:');
-  // for (const header in req.headers) {
-  //     console.log(`  ${header}: ${req.headers[header]}`);
-  // }
-  // console.log('--- End Comprehensive Request Log ---');
   next(); // Chuyển quyền điều khiển sang middleware/route tiếp theo
 });
 app.set('view engine', 'ejs');
@@ -111,6 +73,8 @@ app.use('/hardware-units', hardwareUnitRoutes);
 app.use('/assignments', assignmentRoutes);
 app.use('/repairs', repairRoutes);
 app.use('/device-hardware',deviceHardwareRoutes);
+
+app.use(errorHandler);
 
 app.get('/', (req, res) => {
   res.render('home'); 

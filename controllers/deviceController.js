@@ -4,117 +4,79 @@ import {
   updateDeviceService,
   toggleDeviceService,
   deleteDeviceService,
-  getDeviceTypesDropdown 
+  getDeviceTypesDropdown
 } from '../services/deviceService.js';
 
-export async function getAllDevices(req, res) {
-  const filters = {
-    code: req.query.code,
-    name: req.query.name,
-    filter: req.query.filter || 'all',
-    deviceTypeId: req.query.deviceTypeId,
-    startDate: req.query.startDate,
-    endDate: req.query.endDate,
-    page: parseInt(req.query.page) || 1,
-    limit: parseInt(req.query.limit) || 10
-  };
+import apiResponse from '../utils/apiResponse.js';
+import { normalizePagination, buildPagination } from '../utils/pagination.js';
 
-  const { devices, total } = await getDevices(filters);
-  const deviceTypes = await getDeviceTypesDropdown();
-
-  res.render('devices/index', {
-    devices,
-    deviceTypes,
-    filter: filters.filter,
-    message:'',
-    filters,
-    total,
-    req
+function listResponse(res, items, total, paginationInput, message, legacyKey) {
+  const pagination = buildPagination(total, paginationInput.page, paginationInput.limit);
+  return res.json({
+    success: true,
+    message,
+    data: items,
+    meta: { pagination },
+    [legacyKey]: items,
+    total: pagination.totalItems,
+    currentPage: pagination.page
   });
 }
 
+export async function getAllDevices(req, res) {
+  const filters = {
+    code: req.query.code || '',
+    name: req.query.name || '',
+    filter: req.query.filter || 'all',
+    deviceTypeId: req.query.deviceTypeId || '',
+    startDate: req.query.startDate || '',
+    endDate: req.query.endDate || '',
+    page: parseInt(req.query.page, 10) || 1,
+    limit: parseInt(req.query.limit, 10) || 10
+  };
+  const { devices, total } = await getDevices(filters);
+  const deviceTypes = await getDeviceTypesDropdown();
+  res.render('devices/index', { devices, deviceTypes, filter: filters.filter, message: '', filters, total, req });
+}
+
 export async function getDevicesAjax(req, res) {
-  try {
-    const filters = {
-      ...req.query,
-      page: parseInt(req.query.page) || 1,
-      limit: parseInt(req.query.limit) || 10
-    };
-
-    const { devices, total } = await getDevices(filters);
-
-    res.json({
-      devices,
-      total,
-      currentPage: filters.page
-    });
-  } catch (err) {
-    console.error('Lỗi truy vấn thiết bị:', err);
-    res.status(500).json({ error: 'Không thể lấy dữ liệu thiết bị' });
-  }
-};
+  const pagination = normalizePagination(req.query, 10);
+  const filters = {
+    code: req.query.code || '',
+    name: req.query.name || '',
+    filter: req.query.filter || 'all',
+    deviceTypeId: req.query.deviceTypeId || null,
+    startDate: req.query.startDate || null,
+    endDate: req.query.endDate || null,
+    page: pagination.page,
+    limit: pagination.limit,
+    offset: pagination.offset
+  };
+  const { devices, total } = await getDevices(filters);
+  return listResponse(res, devices, total, pagination, 'Lấy danh sách thiết bị thành công', 'devices');
+}
 
 export async function createDevice(req, res) {
   const { code, name, deviceTypeId, purchaseDate } = req.body;
-
-  if (!code || !name || !deviceTypeId || !purchaseDate) {
-    return res.status(400).json({ success: false, message: 'Thiếu thông tin bắt buộc' });
-  }
-
-  try {
-    await createDeviceService(req.body);
-    res.json({ success: true, message: 'Cập nhật thành công' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Có lỗi khi tạo thiết bị' });
-  }
+  if (!code || !name || !deviceTypeId || !purchaseDate) return apiResponse.error(res, 'Thiếu thông tin bắt buộc', 400);
+  await createDeviceService(req.body);
+  return apiResponse.success(res, null, 'Thêm thiết bị thành công', null, 201);
 }
 
 export async function updateDevice(req, res) {
   const { code, name, deviceTypeId, purchaseDate } = req.body;
-
-  if (!code || !name || !deviceTypeId || !purchaseDate) {
-    return res.status(400).json({ success: false, message: 'Thiếu thông tin bắt buộc khi cập nhật' });
-  }
-  
-  try {
-    await updateDeviceService(req.params.id, req.body);
-    res.json({ success: true, message: 'Cập nhật thành công' });
-  }catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Có lỗi khi thay đổi trạng thái thiết bị' });
-  }
+  if (!code || !name || !deviceTypeId || !purchaseDate) return apiResponse.error(res, 'Thiếu thông tin bắt buộc khi cập nhật', 400);
+  await updateDeviceService(req.params.id, req.body);
+  return apiResponse.success(res, null, 'Cập nhật thiết bị thành công');
 }
 
 export async function toggleDevice(req, res) {
-  try {
-    await toggleDeviceService(req.params.id);
-    res.json({ success: true, message: 'Đã thay đổi trạng thái thiết bị' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Có lỗi khi thay đổi trạng thái thiết bị' });
-  }
+  await toggleDeviceService(req.params.id);
+  return apiResponse.success(res, null, 'Đã thay đổi trạng thái thiết bị');
 }
 
 export async function deleteDevice(req, res) {
-  try {
-    const result = await deleteDeviceService(req.params.id);
-    if (result.success) {
-            // Nếu thành công, trả về 200 kèm message
-            return res.json({ 
-                success: true, 
-                message: result.message 
-            });
-        } else {
-            // QUAN TRỌNG: Nếu thất bại do ràng buộc dữ liệu, phải trả về status lỗi (400 hoặc 409)
-            // Điều này giúp AJAX nhảy vào block .error() thay vì .success()
-            return res.status(400).json({ 
-                success: false, 
-                message: result.message 
-            });
-        }
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.message });
-  }
+  const result = await deleteDeviceService(req.params.id);
+  if (!result.success) return apiResponse.error(res, result.message || 'Không thể xóa thiết bị', 409);
+  return apiResponse.success(res, null, result.message || 'Xóa thiết bị thành công');
 }

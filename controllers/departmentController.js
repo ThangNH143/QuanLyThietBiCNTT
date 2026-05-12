@@ -6,96 +6,71 @@ import {
   deleteDepartmentService
 } from '../services/departmentService.js';
 
-export async function getDepartmentsAjax(req, res) {
-  try {
-    const filters = {
-      ...req.query,
-      page: parseInt(req.query.page) || 1,
-      limit: parseInt(req.query.limit) || 10
-    };
-    const { departments, total } = await getDepartments(filters);
-    res.json({ departments, total, currentPage: filters.page });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Lỗi khi lấy dữ liệu phòng ban' });
-  }
+import apiResponse from '../utils/apiResponse.js';
+import { normalizePagination, buildPagination } from '../utils/pagination.js';
+
+function listResponse(res, items, total, paginationInput, message, legacyKey) {
+  const pagination = buildPagination(total, paginationInput.page, paginationInput.limit);
+  return res.json({
+    success: true,
+    message,
+    data: items,
+    meta: { pagination },
+    [legacyKey]: items,
+    total: pagination.totalItems,
+    currentPage: pagination.page
+  });
 }
 
 export async function getAllDepartments(req, res) {
   const filters = {
-    code: req.query.code,
-    name: req.query.name,
-    note: req.query.note,
+    code: req.query.code || '',
+    name: req.query.name || '',
+    note: req.query.note || '',
     filter: req.query.filter || 'all',
-    page: parseInt(req.query.page) || 1,
-    limit: parseInt(req.query.limit) || 10
+    page: parseInt(req.query.page, 10) || 1,
+    limit: parseInt(req.query.limit, 10) || 10
   };
-
   const { departments, total } = await getDepartments(filters);
+  res.render('departments/index', { departments, filters, total, req });
+}
 
-  res.render('departments/index', {
-    departments,
-    filters,
-    total,
-    req
-  });
+export async function getDepartmentsAjax(req, res) {
+  const pagination = normalizePagination(req.query, 10);
+  const filters = {
+    code: req.query.code || '',
+    name: req.query.name || '',
+    note: req.query.note || '',
+    filter: req.query.filter || 'all',
+    page: pagination.page,
+    limit: pagination.limit,
+    offset: pagination.offset
+  };
+  const { departments, total } = await getDepartments(filters);
+  return listResponse(res, departments, total, pagination, 'Lấy danh sách phòng ban thành công', 'departments');
 }
 
 export async function createDepartment(req, res) {
   const { code, name } = req.body;
-  if (!code || !name) return res.status(400).json({ success: false, message: 'Mã và Tên phòng ban là bắt buộc' });
-
-  try {
-    await createDepartmentService(req.body);
-    res.json({ success: true, message: 'Thêm phòng ban thành công' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Lỗi khi thêm phòng ban' });
-  }
+  if (!code || !name) return apiResponse.error(res, 'Mã và tên phòng ban là bắt buộc', 400);
+  await createDepartmentService(req.body);
+  return apiResponse.success(res, null, 'Thêm phòng ban thành công', null, 201);
 }
 
 export async function updateDepartment(req, res) {
   const { code, name } = req.body;
-  if (!code || !name) return res.status(400).json({ success: false, message: 'Dữ liệu không được trống' });
-
-  try {
-    await updateDepartmentService(req.params.id, req.body);
-    res.json({ success: true, message: 'Cập nhật phòng ban thành công' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Lỗi khi cập nhật phòng ban' });
-  }
+  if (!code || !name) return apiResponse.error(res, 'Mã và tên phòng ban là bắt buộc', 400);
+  await updateDepartmentService(req.params.id, req.body);
+  return apiResponse.success(res, null, 'Cập nhật phòng ban thành công');
 }
 
 export async function toggleDepartment(req, res) {
-  try {
-    await toggleDepartmentService(req.params.id);
-    res.json({ success: true, message: 'Đã thay đổi trạng thái phòng ban' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Lỗi khi cập nhật trạng thái' });
-  }
+  await toggleDepartmentService(req.params.id);
+  return apiResponse.success(res, null, 'Đã thay đổi trạng thái phòng ban');
 }
 
 export async function deleteDepartment(req, res) {
-  try {
-    const result = await deleteDepartmentService(req.params.id);
-    if (result.success) {
-            // Nếu thành công, trả về 200 kèm message
-            return res.json({ 
-                success: true, 
-                message: result.message 
-            });
-        } else {
-            // QUAN TRỌNG: Nếu thất bại do ràng buộc dữ liệu, phải trả về status lỗi (400 hoặc 409)
-            // Điều này giúp AJAX nhảy vào block .error() thay vì .success()
-            return res.status(400).json({ 
-                success: false, 
-                message: result.message 
-            });
-        }
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: err.message });
-  }
+  const result = await deleteDepartmentService(req.params.id);
+  if (!result.success) return apiResponse.error(res, result.message || 'Không thể xóa phòng ban', 409);
+  return apiResponse.success(res, null, result.message || 'Xóa phòng ban thành công');
 }

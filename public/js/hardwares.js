@@ -1,177 +1,370 @@
-let currentHardwareParams = { page: 1, limit: 10 };
-let reopenAfterSubmit = false; // Mặc định không mở lại
+let currentHardwareParams = {
+  page: 1,
+  limit: 10,
+  filter: 'all'
+};
 
-function safeHideModal(modalSelector) {
-  document.activeElement?.blur(); // Xóa focus
-  $(modalSelector).modal('hide');
-
-  setTimeout(() => {
-    $('body').css('overflow', 'auto').removeClass('modal-open'); // ✅ Gỡ class modal-open
-    $('.modal-backdrop').remove(); // ✅ Gỡ nền đen nếu bị dư
-
-    // ✅ Nếu bật cờ mở lại
-    if (reopenAfterSubmit) {
-      reopenAfterSubmit = false; // reset lại
-      $(modalSelector).modal('show');
-    }
-  }, 500);
+function getListFromResponse(res, legacyKey) {
+  if (Array.isArray(res?.[legacyKey])) return res[legacyKey];
+  if (Array.isArray(res?.data)) return res.data;
+  return [];
 }
 
-function loadHardwareTypesSync() {
-  return $.get('/hardware-types/ajax?page=1&limit=100');
+function getPaginationFromResponse(res, fallbackParams = {}) {
+  if (res?.meta?.pagination) return res.meta.pagination;
+
+  const page = parseInt(res?.currentPage, 10) || parseInt(fallbackParams.page, 10) || 1;
+  const limit = parseInt(fallbackParams.limit, 10) || 10;
+  const totalItems = parseInt(res?.total, 10) || 0;
+  const totalPages = Math.max(Math.ceil(totalItems / limit), 1);
+
+  return {
+    page,
+    limit,
+    totalItems,
+    totalPages
+  };
 }
 
-// 🛎️ Thông báo alert Bootstrap
+function getErrorMessage(xhr, fallback = 'Có lỗi xảy ra') {
+  return xhr.responseJSON?.message || fallback;
+}
+
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
 function showHardwareAlert(message, type = 'success') {
-  $('#hardwareAlertContainer').html(`
+  const alertHtml = `
     <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-      <strong>Lưu ý:</strong> ${message}
+      <strong>Lưu ý:</strong> ${escapeHtml(message)}
       <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
+  `;
+
+  $('#hardwareAlertContainer').html(alertHtml);
+
+  setTimeout(() => {
+    $('.alert').alert('close');
+  }, 5000);
+}
+
+function setHardwareLoading(isLoading) {
+  if (!isLoading) return;
+
+  $('#hardwareTable').html(`
+    <div class="text-center py-4">
+      <div class="spinner-border" role="status"></div>
+      <div class="mt-2">Đang tải dữ liệu...</div>
+    </div>
   `);
-  setTimeout(() => $('.alert').alert('close'), 5000);
 }
 
-// 🔧 Tải loại phần cứng cho dropdown
-function loadHardwareTypes() {
-  $.get('/hardware-types/ajax?page=1&limit=100', function(data) {
-    const dropdown = $('#hardwareTypeDropdown');
-    const modalDropdown = $('#modalHardwareType');
-    dropdown.empty().append(`<option value="">-- Loại phần cứng --</option>`);
-    modalDropdown.empty();
-    data.hardwareTypes.forEach(ht => {
-      dropdown.append(`<option value="${ht.id}">${ht.name}</option>`);
-      modalDropdown.append(`<option value="${ht.id}">${ht.name}</option>`);
-    });
+function renderHardwareTypeOptions(types, selectedValue = '') {
+  const options = ['<option value="">-- Chọn loại phần cứng --</option>'];
+
+  types.forEach((type) => {
+    const selected = String(type.id) === String(selectedValue) ? 'selected' : '';
+
+    options.push(`
+      <option value="${escapeHtml(type.id)}" ${selected}>
+        ${escapeHtml(type.name || type.code || '')}
+      </option>
+    `);
   });
+
+  return options.join('');
 }
 
-// 📋 Tải danh sách phần cứng
-function loadHardwares(params = {}) {
-  loadHardwareTypesSync().then((typeData) => {
-    const dropdown = $('#hardwareTypeDropdown');
-    const modalDropdown = $('#modalHardwareType');
-    dropdown.empty().append(`<option value="">-- Loại phần cứng --</option>`);
-    modalDropdown.empty();
-    typeData.hardwareTypes.forEach(ht => {
-      dropdown.append(`<option value="${ht.id}">${ht.name}</option>`);
-      modalDropdown.append(`<option value="${ht.id}">${ht.name}</option>`);
+function loadHardwareTypesForSelects(selectedValue = '') {
+  return $.get('/hardware-types/ajax', {
+    page: 1,
+    limit: 1000,
+    filter: 'active'
+  })
+    .then((res) => {
+      const types = getListFromResponse(res, 'hardwareTypes');
+
+      $('select[name="hardwareTypeId"], #hardwareTypeId, #filterHardwareTypeId').each(function () {
+        const currentValue = $(this).val() || selectedValue;
+        $(this).html(renderHardwareTypeOptions(types, currentValue));
+      });
+
+      return types;
+    })
+    .catch((xhr) => {
+      showHardwareAlert(
+        getErrorMessage(xhr, 'Lỗi khi tải danh sách loại phần cứng'),
+        'danger'
+      );
+
+      return [];
     });
-    const query = $.param(params);
-    $.get(`/hardwares/ajax?${query}`, function(data) {
-      const rows = Array.isArray(data.hardwares)
-        ? data.hardwares.map(hw => `
+}
+
+function renderHardwareTable(hardwares) {
+  const rows = Array.isArray(hardwares) && hardwares.length > 0
+    ? hardwares.map((hw) => {
+      const id = hw.id;
+      const code = hw.code ?? '';
+      const name = hw.name ?? '';
+      const note = hw.note ?? '';
+
+      const hardwareTypeName =
+        hw.hardwareTypeName ??
+        hw.typeName ??
+        hw.hardware_type_name ??
+        hw.HardwareTypeName ??
+        hw.TypeName ??
+        '';
+
+      const isInactive = Boolean(hw.isInactive);
+
+      return `
+        <tr>
+          <td>
+            <input
+              value="${escapeHtml(code)}"
+              id="hw-code-${id}"
+              class="form-control form-control-sm"
+            />
+          </td>
+
+          <td>
+            <input
+              value="${escapeHtml(name)}"
+              id="hw-name-${id}"
+              class="form-control form-control-sm"
+            />
+          </td>
+
+          <td>
+            ${escapeHtml(hardwareTypeName)}
+          </td>
+
+          <td>
+            <input
+              value="${escapeHtml(note)}"
+              id="hw-note-${id}"
+              class="form-control form-control-sm"
+            />
+          </td>
+
+          <td>
+            <span class="badge ${isInactive ? 'bg-secondary' : 'bg-success'}">
+              ${isInactive ? 'Tạm ngưng' : 'Hoạt động'}
+            </span>
+          </td>
+
+          <td class="text-nowrap">
+            <button class="btn btn-sm btn-warning" onclick="updateHardware(${id})">
+              ✏️
+            </button>
+
+            <button class="btn btn-sm btn-secondary" onclick="toggleHardware(${id})">
+              ${isInactive ? '🔄 Kích hoạt' : '🔄 Tạm ngưng'}
+            </button>
+
+            <button class="btn btn-sm btn-danger" onclick="deleteHardware(${id})">
+              ❌
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('')
+    : '<tr><td colspan="6" class="text-center text-muted">Không có dữ liệu</td></tr>';
+
+  $('#hardwareTable').html(`
+    <div class="table-responsive">
+      <table class="table table-bordered table-striped align-middle">
+        <thead>
           <tr>
-            <td><input value="${hw.code}" id="code-${hw.id}" class="form-control form-control-sm" /></td>
-            <td><input value="${hw.name}" id="name-${hw.id}" class="form-control form-control-sm" /></td>
-            <td>
-              <select id="type-${hw.id}" class="form-select form-select-sm">
-                ${$('#hardwareTypeDropdown option').map((i, opt) => {
-                  const selected = $(opt).val() == hw.hardwareTypeId ? 'selected' : '';
-                  return `<option value="${$(opt).val()}" ${selected}>${$(opt).text()}</option>`;
-                }).get().join('')}
-              </select>
-            </td>
-            <td><input value="${hw.note || ''}" id="note-${hw.id}" class="form-control form-control-sm" /></td>
-            <td>
-              <button class="btn btn-sm btn-warning" onclick="updateHardware(${hw.id})">✏️</button>
-              <button class="btn btn-sm btn-secondary" onclick="toggleHardware(${hw.id})">${hw.isInactive ? '🔄 Kích hoạt' : '🔄 Tạm ngưng'}</button>
-              <button class="btn btn-sm btn-danger" onclick="deleteHardware(${hw.id})">❌</button>
-            </td>
+            <th>Mã</th>
+            <th>Tên phần cứng</th>
+            <th>Loại phần cứng</th>
+            <th>Ghi chú</th>
+            <th>Trạng thái</th>
+            <th>Thao tác</th>
           </tr>
-        `).join('')
-        : '<tr><td colspan="6">Không có dữ liệu phần cứng</td></tr>';
-
-      $('#hardwareTable').html(`
-        <div class="table-responsive">
-          <table class="table table-bordered table-striped">
-            <thead><tr><th>Mã</th><th>Tên</th><th>Loại</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      `);
-
-      const p = data.currentPage;
-      const totalPages = Math.ceil(data.total / currentHardwareParams.limit);
-      $('#hardwarePagination').html(`
-        <div class="d-flex flex-wrap justify-content-center gap-2">
-          <button class="btn btn-sm btn-outline-dark" ${p===1 ? 'disabled' : ''} onclick="loadHardwares({ ...currentHardwareParams, page: 1 })">⏮</button>
-          <button class="btn btn-sm btn-outline-dark" ${p===1 ? 'disabled' : ''} onclick="loadHardwares({ ...currentHardwareParams, page: ${p - 1} })">⏪</button>
-          <span class="align-self-center">${p} / ${totalPages}</span>
-          <button class="btn btn-sm btn-outline-dark" ${p===totalPages ? 'disabled' : ''} onclick="loadHardwares({ ...currentHardwareParams, page: ${p + 1} })">⏩</button>
-          <button class="btn btn-sm btn-outline-dark" ${p===totalPages ? 'disabled' : ''} onclick="loadHardwares({ ...currentHardwareParams, page: ${totalPages} })">⏭</button>
-        </div>
-      `);
-
-      currentHardwareParams.page = p;
-    });
-  });
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `);
 }
 
-// ➕ Thêm phần cứng
-$('#createHardwareForm').on('submit', function(e) {
+function renderHardwarePagination(pagination) {
+  const page = pagination.page || 1;
+  const totalPages = pagination.totalPages || 1;
+
+  $('#hardwarePagination').html(`
+    <div class="d-flex flex-wrap justify-content-center gap-2">
+      <button
+        class="btn btn-sm btn-outline-primary"
+        ${page === 1 ? 'disabled' : ''}
+        onclick="changeHardwarePage(1)"
+      >
+        ⏮
+      </button>
+
+      <button
+        class="btn btn-sm btn-outline-primary"
+        ${page === 1 ? 'disabled' : ''}
+        onclick="changeHardwarePage(${page - 1})"
+      >
+        ⏪
+      </button>
+
+      <span class="align-self-center">
+        Trang ${page} / ${totalPages}
+      </span>
+
+      <button
+        class="btn btn-sm btn-outline-primary"
+        ${page === totalPages ? 'disabled' : ''}
+        onclick="changeHardwarePage(${page + 1})"
+      >
+        ⏩
+      </button>
+
+      <button
+        class="btn btn-sm btn-outline-primary"
+        ${page === totalPages ? 'disabled' : ''}
+        onclick="changeHardwarePage(${totalPages})"
+      >
+        ⏭
+      </button>
+    </div>
+  `);
+}
+
+function changeHardwarePage(page) {
+  currentHardwareParams.page = page;
+  loadHardwares(currentHardwareParams);
+}
+
+function loadHardwares(params = {}) {
+  currentHardwareParams = {
+    ...currentHardwareParams,
+    ...params
+  };
+
+  setHardwareLoading(true);
+
+  $.get('/hardwares/ajax', currentHardwareParams)
+    .done((res) => {
+      const hardwares = getListFromResponse(res, 'hardwares');
+      const pagination = getPaginationFromResponse(res, currentHardwareParams);
+
+      renderHardwareTable(hardwares);
+      renderHardwarePagination(pagination);
+
+      currentHardwareParams.page = pagination.page;
+      currentHardwareParams.limit = pagination.limit;
+    })
+    .fail((xhr) => {
+      showHardwareAlert(
+        getErrorMessage(xhr, 'Lỗi khi tải danh sách phần cứng'),
+        'danger'
+      );
+
+      renderHardwareTable([]);
+      renderHardwarePagination({
+        page: 1,
+        limit: currentHardwareParams.limit,
+        totalItems: 0,
+        totalPages: 1
+      });
+    });
+}
+
+$('#createHardwareForm').on('submit', function (e) {
   e.preventDefault();
+
   const formData = Object.fromEntries(new FormData(this));
+
   if (!formData.code || !formData.name || !formData.hardwareTypeId) {
-    showHardwareAlert('Vui lòng nhập đầy đủ thông tin', 'danger');
+    showHardwareAlert('Vui lòng nhập mã, tên và loại phần cứng', 'danger');
     return;
   }
 
-  $.post('/hardwares', formData, function(res) {
-    showHardwareAlert(res.message, 'success');
-    reopenAfterSubmit = true;
-    safeHideModal('#hardwareModal');
-    $('#createHardwareForm')[0].reset();
-    loadHardwares(currentHardwareParams);
-  }).fail((xhr) => {
-    showHardwareAlert(xhr.responseJSON?.message || 'Lỗi khi thêm phần cứng', 'danger');
-  });
+  $.post('/hardwares', formData)
+    .done((res) => {
+      showHardwareAlert(res.message || 'Thêm phần cứng thành công', 'success');
+
+      $('#createHardwareForm')[0].reset();
+
+      const modalEl = document.querySelector('#hardwareModal');
+
+      if (modalEl && typeof bootstrap !== 'undefined') {
+        const modalInstance = bootstrap.Modal.getInstance(modalEl);
+        if (modalInstance) modalInstance.hide();
+      }
+
+      currentHardwareParams.page = 1;
+      loadHardwares(currentHardwareParams);
+    })
+    .fail((xhr) => {
+      showHardwareAlert(
+        getErrorMessage(xhr, 'Lỗi khi thêm phần cứng'),
+        'danger'
+      );
+    });
 });
 
-// ✏️ Sửa phần cứng
 function updateHardware(id) {
   const data = {
-    code: $(`#code-${id}`).val(),
-    name: $(`#name-${id}`).val(),
-    hardwareTypeId: $(`#type-${id}`).val(),
-    note: $(`#note-${id}`).val()
+    code: $(`#hw-code-${id}`).val(),
+    name: $(`#hw-name-${id}`).val(),
+    note: $(`#hw-note-${id}`).val()
   };
 
-  if (!data.code || !data.name || !data.hardwareTypeId) {
-    showHardwareAlert('Vui lòng điền đầy đủ thông tin khi cập nhật', 'danger');
+  if (!data.code || !data.name) {
+    showHardwareAlert('Mã và tên phần cứng là bắt buộc', 'danger');
     return;
   }
 
   $.ajax({
-    url: `/hardwares/${id}/update`,
+    url: `/hardwares/${id}`,
     type: 'PUT',
-    data,
-    success: (res) => {
-      showHardwareAlert(res.message, 'success');
+    data
+  })
+    .done((res) => {
+      showHardwareAlert(res.message || 'Cập nhật phần cứng thành công', 'success');
       loadHardwares(currentHardwareParams);
-    },
-    error: (xhr) => {
-      showHardwareAlert(xhr.responseJSON?.message || 'Lỗi khi cập nhật', 'danger');
-    }
-  });
+    })
+    .fail((xhr) => {
+      showHardwareAlert(
+        getErrorMessage(xhr, 'Lỗi khi cập nhật phần cứng'),
+        'danger'
+      );
+    });
 }
 
-// 🔄 Tạm ngưng / kích hoạt
 function toggleHardware(id) {
   $.ajax({
     url: `/hardwares/${id}/toggle`,
-    type: 'PUT',
-    success: (res) => {
-      showHardwareAlert(res.message, 'success');
+    type: 'PATCH'
+  })
+    .done((res) => {
+      showHardwareAlert(res.message || 'Đã thay đổi trạng thái phần cứng', 'success');
       loadHardwares(currentHardwareParams);
-    },
-    error: (xhr) => {
-      showHardwareAlert(xhr.responseJSON?.message || 'Lỗi khi cập nhật trạng thái', 'danger');
-    }
-  });
+    })
+    .fail((xhr) => {
+      showHardwareAlert(
+        getErrorMessage(xhr, 'Lỗi khi thay đổi trạng thái'),
+        'danger'
+      );
+    });
 }
 
-// ❌ Xóa phần cứng
 function deleteHardware(id) {
   Swal.fire({
     title: 'Bạn có chắc?',
@@ -185,37 +378,49 @@ function deleteHardware(id) {
     if (!result.isConfirmed) return;
 
     $.ajax({
-      url: `/hardwares/${id}/delete`,
-      type: 'DELETE',
-      success: (res) => {
-        showHardwareAlert(res.message, 'success');
+      url: `/hardwares/${id}`,
+      type: 'DELETE'
+    })
+      .done((res) => {
+        showHardwareAlert(res.message || 'Xóa phần cứng thành công', 'success');
         loadHardwares(currentHardwareParams);
-      },
-      error: (xhr) => {
-        showHardwareAlert(xhr.responseJSON?.message || 'Lỗi khi xóa phần cứng', 'danger');
-      }
-    });
+      })
+      .fail((xhr) => {
+        showHardwareAlert(
+          getErrorMessage(xhr, 'Lỗi khi xóa phần cứng'),
+          'danger'
+        );
+      });
   });
 }
 
-// 🔄 Reset
-$('#resetHardwareBtn').on('click', function() {
+$('#resetHardwareBtn').on('click', function () {
   $('#filterHardwareForm')[0].reset();
-  currentHardwareParams = { page: 1, limit: 10 };
+
+  currentHardwareParams = {
+    page: 1,
+    limit: 10,
+    filter: 'all'
+  };
+
   loadHardwares(currentHardwareParams);
 });
 
-// 🔍 Tìm kiếm
-$('#filterHardwareForm').on('submit', function(e) {
+$('#filterHardwareForm').on('submit', function (e) {
   e.preventDefault();
-  currentHardwareParams = Object.fromEntries(new FormData(this));
-  currentHardwareParams.page = 1;
-  currentHardwareParams.limit = 10;
+
+  const formData = Object.fromEntries(new FormData(this));
+
+  currentHardwareParams = {
+    ...formData,
+    page: 1,
+    limit: 10
+  };
+
   loadHardwares(currentHardwareParams);
 });
 
-// 🚀 Khởi động
 $(document).ready(() => {
-  loadHardwareTypes();
+  loadHardwareTypesForSelects();
   loadHardwares(currentHardwareParams);
 });

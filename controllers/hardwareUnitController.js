@@ -6,100 +6,85 @@ import {
   deleteHardwareUnitService
 } from '../services/hardwareUnitService.js';
 
+import apiResponse from '../utils/apiResponse.js';
+import { normalizePagination, buildPagination } from '../utils/pagination.js';
+
+function listResponse(res, items, total, paginationInput, message, legacyKey) {
+  const pagination = buildPagination(total, paginationInput.page, paginationInput.limit);
+  return res.json({
+    success: true,
+    message,
+    data: items,
+    meta: { pagination },
+    [legacyKey]: items,
+    total: pagination.totalItems,
+    currentPage: pagination.page,
+    pagination: {
+      page: pagination.page,
+      limit: pagination.limit,
+      totalRecords: pagination.totalItems,
+      totalPages: pagination.totalPages
+    }
+  });
+}
+
 export async function getAllHardwareUnits(req, res) {
   const filters = {
-    code: req.query.code,
-    serialNumber: req.query.serialNumber,
-    hardwareName: req.query.hardwareName,
-    startDate: req.query.startDate,
-    endDate: req.query.endDate,
+    code: req.query.code || '',
+    serialNumber: req.query.serialNumber || '',
+    hardwareName: req.query.hardwareName || '',
+    startDate: req.query.startDate || '',
+    endDate: req.query.endDate || '',
     filter: req.query.filter || 'all',
-    page: parseInt(req.query.page) || 1,
-    limit: parseInt(req.query.limit) || 10
+    page: parseInt(req.query.page, 10) || 1,
+    limit: parseInt(req.query.limit, 10) || 10
   };
   const { units, total } = await getHardwareUnits(filters);
   res.render('hardwareUnits/index', { units, filters, total, req });
 }
 
 export async function getHardwareUnitsAjax(req, res) {
-  try {
-    const filters = {
-      ...req.query,
-      page: parseInt(req.query.page) || 1,
-      limit: parseInt(req.query.limit) || 10
-    };
-    const { units, total } = await getHardwareUnits(filters);
-
-    const totalPages = Math.max(1, Math.ceil((total || 0) / (filters.limit || 10)));
-
-    // Giữ tương thích ngược (units/total/currentPage) + bổ sung pagination giống các module khác.
-    res.json({
-      units,
-      total,
-      currentPage: filters.page,
-      pagination: {
-        page: filters.page,
-        limit: filters.limit,
-        totalRecords: total || 0,
-        totalPages
-      }
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Lỗi khi lấy danh sách thiết bị phần cứng' });
-  }
+  const pagination = normalizePagination(req.query, 10);
+  const filters = {
+    code: req.query.code || '',
+    serialNumber: req.query.serialNumber || '',
+    hardwareName: req.query.hardwareName || '',
+    startDate: req.query.startDate || null,
+    endDate: req.query.endDate || null,
+    filter: req.query.filter || 'all',
+    page: pagination.page,
+    limit: pagination.limit,
+    offset: pagination.offset
+  };
+  const { units, total } = await getHardwareUnits(filters);
+  return listResponse(res, units, total, pagination, 'Lấy danh sách thiết bị phần cứng thành công', 'units');
 }
 
 export async function createHardwareUnit(req, res) {
-  try {
-    await createHardwareUnitService(req.body);
-    res.json({ message: 'Thêm thiết bị phần cứng thành công' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Lỗi khi thêm thiết bị phần cứng' });
+  const { code, serialNumber, hardwareId, purchaseDate } = req.body;
+  if (!code || !serialNumber || !hardwareId || !purchaseDate) {
+    return apiResponse.error(res, 'Mã, serial, phần cứng và ngày mua là bắt buộc', 400);
   }
+  await createHardwareUnitService(req.body);
+  return apiResponse.success(res, null, 'Thêm thiết bị phần cứng thành công', null, 201);
 }
 
 export async function updateHardwareUnit(req, res) {
-  try {
-    await updateHardwareUnitService(req.params.id, req.body);
-    res.json({ message: 'Cập nhật thiết bị phần cứng thành công' });
-  } catch (err) {
-    console.error(err);
-    // Trả thêm thông tin lỗi để dễ debug (VD: trùng mã/serial, sai kiểu dữ liệu...)
-    res.status(500).json({ message: 'Lỗi khi cập nhật thiết bị phần cứng', error: err.message });
+  const { code, serialNumber, hardwareId, purchaseDate } = req.body;
+  if (!code || !serialNumber || !hardwareId || !purchaseDate) {
+    return apiResponse.error(res, 'Mã, serial, phần cứng và ngày mua là bắt buộc', 400);
   }
+  await updateHardwareUnitService(req.params.id, req.body);
+  return apiResponse.success(res, null, 'Cập nhật thiết bị phần cứng thành công');
 }
 
 export async function toggleHardwareUnit(req, res) {
-  try {
-    await toggleHardwareUnitService(req.params.id);
-    res.json({ message: 'Đã thay đổi trạng thái thiết bị phần cứng' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Lỗi khi cập nhật trạng thái', error: err.message });
-  }
+  await toggleHardwareUnitService(req.params.id);
+  return apiResponse.success(res, null, 'Đã thay đổi trạng thái thiết bị phần cứng');
 }
 
 export async function deleteHardwareUnit(req, res) {
-  try {
-    const result = await deleteHardwareUnitService(req.params.id);
-    if (result.success) {
-      // Nếu thành công, trả về 200 kèm message
-      return res.json({ 
-      success: true, 
-      message: result.message 
-      });
-    } else {
-      // QUAN TRỌNG: Nếu thất bại do ràng buộc dữ liệu, phải trả về status lỗi (400 hoặc 409)
-      // Điều này giúp AJAX nhảy vào block .error() thay vì .success()
-      return res.status(400).json({ 
-        success: false, 
-        message: result.message 
-      });
-    }
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: err.message || 'Lỗi khi xóa thiết bị phần cứng' });
-  }
+  const result = await deleteHardwareUnitService(req.params.id);
+  if (!result.success) return apiResponse.error(res, result.message || 'Không thể xóa thiết bị phần cứng', 409);
+  return apiResponse.success(res, null, result.message || 'Xóa thiết bị phần cứng thành công');
 }
