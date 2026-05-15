@@ -1,5 +1,7 @@
 // routes/deviceAssignmentRoutes.js
+
 import express from 'express';
+
 import {
   getDeviceAssignmentPage,
   getDeviceAssignmentList,
@@ -11,15 +13,18 @@ import {
   getAllDepartments
 } from '../controllers/deviceAssignmentController.js';
 
+import asyncHandler from '../utils/asyncHandler.js';
+
 const router = express.Router();
 
-router.get('/', getDeviceAssignmentPage);
-router.get('/ajax', getDeviceAssignmentList);
-router.get('/departments/ajax', getAllDepartments);
-router.get('/available-devices', getAvailableDevices);
-router.post('/', createAssignment);
-router.put('/:id', updateAssignment);
-router.put('/:id/revoke', revokeAssignment);
-router.delete('/:id', deleteAssignment);
+router.get('/', asyncHandler(getDeviceAssignmentPage));
+router.get('/ajax', asyncHandler(getDeviceAssignmentList));
+router.get('/departments/ajax', asyncHandler(getAllDepartments));
+router.get('/available-devices', asyncHandler(getAvailableDevices));
+
+router.post('/', asyncHandler(createAssignment));
+router.put('/:id', asyncHandler(updateAssignment));
+router.put('/:id/revoke', asyncHandler(revokeAssignment));
+router.delete('/:id', asyncHandler(deleteAssignment));
 
 export default router;

@@ -1,131 +1,154 @@
+// services/deviceAssignmentService.js
+
 import { poolPromise } from '../db/db.js';
 import sql from 'mssql';
 
 /**
- * Lấy danh sách các lệnh giao thiết bị có lọc.
- * Tên SP: sp_DeviceAssignments_Get
+ * Lấy danh sách các lệnh giao thiết bị có lọc + phân trang.
+ * Stored Procedure: sp_DeviceAssignments_Get_Paged
+ *
+ * SP expected recordsets:
+ * - recordsets[0]: data rows
+ * - recordsets[1]: [{ total }]
  */
 export async function getDeviceAssignments(filters = {}) {
-    // 1. Chuẩn bị tham số
-    const page = parseInt(filters.page) || 1;
-    const limit = parseInt(filters.limit) || 10;
-    const offset = (page - 1) * limit;
+  const offset = parseInt(filters.offset, 10) || 0;
+  const limit = parseInt(filters.limit, 10) || 10;
 
-    const allowed = ['active', 'revoked', 'all'];
-    const status = allowed.includes(filters.status) ? filters.status : 'active';
+  const allowedStatuses = ['active', 'revoked', 'all'];
+  const status = allowedStatuses.includes(filters.status)
+    ? filters.status
+    : 'active';
 
-    const deviceNameSearch = filters.deviceName ? `%${filters.deviceName}%` : null;
-    const deptNameSearch = filters.deptName ? `%${filters.deptName}%` : null;
+  const deviceNameSearch = filters.deviceName
+    ? `%${filters.deviceName}%`
+    : null;
 
-    // 2. Gọi Stored Procedure
-    const pool = await poolPromise;
-    const result = await pool.request()
-        .input('pStatus', sql.VarChar(10), status)
-        .input('pDeviceNameSearch', sql.NVarChar(100), deviceNameSearch)
-        .input('pDeptNameSearch', sql.NVarChar(100), deptNameSearch)
-        .input('pOffset', sql.Int, offset)
-        .input('pLimit', sql.Int, limit)
-        .execute('sp_DeviceAssignments_Get_Paged');
-    
-    const data = result.recordsets[0];
-    const totalItems = result.recordsets[1] ? result.recordsets[1][0].total : 0;
+  const deptNameSearch = filters.deptName
+    ? `%${filters.deptName}%`
+    : null;
 
-    return {
-        data: data,
-        pagination: {
-            page: page,
-            limit: limit,
-            totalItems: totalItems,
-            totalPages: Math.ceil(totalItems / limit)
-        }
-    };
-}
+  const pool = await poolPromise;
 
-//get all departments for dropdown
-export async function getAllDepartmentsForDropdown() {
-    try {
-        const pool = await poolPromise;
-        const result = await pool.request()
-            .execute('sp_GetAllDepartments');
-        
-        return result.recordset; 
-    } catch (error) {
-        console.error('Lỗi tại getAllDepartmentsForDropdown:', error);
-        return [];
-    }
+  const result = await pool.request()
+    .input('pStatus', sql.VarChar(10), status)
+    .input('pDeviceNameSearch', sql.NVarChar(100), deviceNameSearch)
+    .input('pDeptNameSearch', sql.NVarChar(100), deptNameSearch)
+    .input('pOffset', sql.Int, offset)
+    .input('pLimit', sql.Int, limit)
+    .execute('sp_DeviceAssignments_Get_Paged');
+
+  if (!result.recordsets || result.recordsets.length < 2) {
+    throw new Error(
+      'Stored Procedure sp_DeviceAssignments_Get_Paged không trả về đủ dữ liệu phân trang.'
+    );
+  }
+
+  const assignments = result.recordsets[0] || [];
+  const totalItems = result.recordsets[1]?.[0]?.total || 0;
+
+  return {
+    assignments,
+    totalItems
+  };
 }
 
 /**
- * Lấy danh sách thiết bị chưa được giao và không đang sửa chữa.
- * Tên SP: sp_Devices_GetAssignable
+ * Lấy tất cả phòng ban cho dropdown.
+ * Stored Procedure: sp_GetAllDepartments
+ */
+export async function getAllDepartmentsForDropdown() {
+  const pool = await poolPromise;
+
+  const result = await pool.request()
+    .execute('sp_GetAllDepartments');
+
+  return result.recordset || [];
+}
+
+/**
+ * Lấy danh sách thiết bị có thể gán.
+ * Stored Procedure: sp_Devices_GetAssignable
+ *
+ * Business rule nên nằm trong SP:
+ * - Thiết bị chưa được gán active
+ * - Thiết bị không inactive
+ * - Thiết bị không đang sửa chữa active, nếu dự án yêu cầu rule này
  */
 export async function getAssignableDevices() {
-    const pool = await poolPromise;
-    const result = await pool.request()
-        .execute('sp_Devices_GetAssignable');
-    
-    return result.recordset;
+  const pool = await poolPromise;
+
+  const result = await pool.request()
+    .execute('sp_Devices_GetAssignable');
+
+  return result.recordset || [];
 }
 
 /**
  * Tạo lệnh giao thiết bị mới.
- * Tên SP: sp_DeviceAssignments_Create
+ * Stored Procedure: sp_DeviceAssignments_Create
  */
 export async function createDeviceAssignment({ deviceId, deptId, startDate, note }) {
-    const pool = await poolPromise;
-    await pool.request()
-        .input('pDeviceId', sql.Int, deviceId)
-        .input('pDeptId', sql.Int, deptId)
-        .input('pStartDate', sql.DateTime, startDate)
-        .input('pNote', sql.NVarChar(200), note || null) // Dùng null thay vì '' nếu không có note
-        .execute('sp_DeviceAssignments_Create');
+  const pool = await poolPromise;
+
+  await pool.request()
+    .input('pDeviceId', sql.Int, parseInt(deviceId, 10))
+    .input('pDeptId', sql.Int, parseInt(deptId, 10))
+    .input('pStartDate', sql.DateTime, startDate)
+    .input('pNote', sql.NVarChar(200), note || null)
+    .execute('sp_DeviceAssignments_Create');
 }
 
 /**
- * Cập nhật lệnh giao thiết bị.
- * Tên SP: sp_DeviceAssignments_Update
+ * Cập nhật lịch sử giao thiết bị.
+ * Stored Procedure: sp_DeviceAssignments_Update
  */
 export async function updateDeviceAssignment(id, { deptId, startDate, endDate, note }) {
-    const pool = await poolPromise;
-    await pool.request()
-        .input('pId', sql.Int, id)
-        .input('pDeptId', sql.Int, deptId)
-        .input('pStartDate', sql.DateTime, startDate)
-        .input('pEndDate', sql.DateTime, endDate || null)
-        .input('pNote', sql.NVarChar(200), note || null)
-        .execute('sp_DeviceAssignments_Update');
+  const pool = await poolPromise;
+
+  await pool.request()
+    .input('pId', sql.Int, parseInt(id, 10))
+    .input('pDeptId', sql.Int, parseInt(deptId, 10))
+    .input('pStartDate', sql.DateTime, startDate)
+    .input('pEndDate', sql.DateTime, endDate || null)
+    .input('pNote', sql.NVarChar(200), note || null)
+    .execute('sp_DeviceAssignments_Update');
 }
 
 /**
- * Thu hồi thiết bị (Cập nhật endDate và isInactive).
- * Tên SP: sp_DeviceAssignments_Revoke
+ * Thu hồi thiết bị.
+ * Stored Procedure: sp_DeviceAssignments_Revoke
  */
 export async function revokeDeviceAssignment(id) {
-    const pool = await poolPromise;
-    await pool.request()
-        .input('pId', sql.Int, id)
-        .execute('sp_DeviceAssignments_Revoke');
+  const pool = await poolPromise;
+
+  await pool.request()
+    .input('pId', sql.Int, parseInt(id, 10))
+    .execute('sp_DeviceAssignments_Revoke');
 }
 
 /**
- * Xóa lệnh giao thiết bị.
- * Tên SP: sp_DeviceAssignments_Delete
+ * Xóa bản ghi gán thiết bị.
+ * Stored Procedure: sp_DeviceAssignments_Delete
  */
 export async function deleteDeviceAssignment(id) {
-    try {
-        const pool = await poolPromise;
-        await pool.request()
-            .input('pId', sql.Int, id)
-            .execute('sp_DeviceAssignments_Delete');
+  try {
+    const pool = await poolPromise;
 
-        return { success: true, message: 'Xóa thành công' };
-    } catch (error) {
-        // CHỈNH SỬA TẠI ĐÂY:
-        // Nếu lỗi đến từ lệnh THROW trong SP, message sẽ nằm trong error.message
-        console.error('SQL Error:', error);
-        return { 
-            success: false, 
-            message: error.message || 'Có lỗi xảy ra khi xóa dữ liệu' 
-        };
-    }
+    await pool.request()
+      .input('pId', sql.Int, parseInt(id, 10))
+      .execute('sp_DeviceAssignments_Delete');
+
+    return {
+      success: true,
+      message: 'Xóa thành công'
+    };
+  } catch (error) {
+    console.error('SQL Error:', error);
+
+    return {
+      success: false,
+      message: error.message || 'Có lỗi xảy ra khi xóa dữ liệu'
+    };
+  }
 }
