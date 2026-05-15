@@ -1,4 +1,7 @@
+// routes/deviceHardwareUnit.js
+
 import express from 'express';
+
 import {
   getDeviceHardwareIndex,
   getDevicesWithHardwareUnits,
@@ -10,15 +13,20 @@ import {
   detachHardwareUnit
 } from '../controllers/deviceHardwareUnitController.js';
 
+import asyncHandler from '../utils/asyncHandler.js';
+
 const router = express.Router();
 
-router.get('/', getDeviceHardwareIndex);
-router.get('/ajax', getDevicesWithHardwareUnits);
-router.get('/devices/ungrouped', getUngroupedDevices); // ✅ Tạo mới
-router.get('/hardware-units/create', getHardwareUnitsCreate); // ✅ Tạo mới
-router.get('/hardware-units/edit', getHardwareUnitsEdit); // ✅ Sửa thiết bị
-router.get('/:deviceId/assigned', getAssignedHardwareUnits);
-router.put('/:deviceId/update', updateAssignedHardwareUnits);
-router.delete('/:deviceId/detach/:hardwareUnitId', detachHardwareUnit);
+router.get('/', asyncHandler(getDeviceHardwareIndex));
+router.get('/ajax', asyncHandler(getDevicesWithHardwareUnits));
+
+router.get('/devices/ungrouped', asyncHandler(getUngroupedDevices));
+router.get('/hardware-units/create', asyncHandler(getHardwareUnitsCreate));
+router.get('/hardware-units/edit', asyncHandler(getHardwareUnitsEdit));
+
+router.get('/:deviceId/assigned', asyncHandler(getAssignedHardwareUnits));
+
+router.put('/:deviceId/update', asyncHandler(updateAssignedHardwareUnits));
+router.delete('/:deviceId/detach/:hardwareUnitId', asyncHandler(detachHardwareUnit));
 
 export default router;

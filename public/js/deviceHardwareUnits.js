@@ -1,3 +1,5 @@
+// public/js/deviceHardwareUnits.js
+
 let currentDeviceHardwareParams = {
   page: 1,
   limit: 10,
@@ -6,219 +8,498 @@ let currentDeviceHardwareParams = {
 };
 
 $(document).ready(function () {
-  loadDeviceHardwareUnits();
-
-  $('#btnOpenCreateModal').on('click', openCreateModal);
-
-  $('#filterDeviceHardwareForm').on('submit', function (e) {
-    e.preventDefault();
-    const formData = Object.fromEntries(new FormData(this));
-    currentDeviceHardwareParams = {
-      ...currentDeviceHardwareParams,
-      ...formData,
-      page: 1
-    };
-    loadDeviceHardwareUnits(currentDeviceHardwareParams);
-  });
-
-  $('#resetDeviceHardwareFilter').on('click', function () {
-    $('#filterDeviceHardwareForm')[0].reset();
-    currentDeviceHardwareParams = {
-      page: 1,
-      limit: 10,
-      deviceName: '',
-      hardwareKeyword: ''
-    };
-    loadDeviceHardwareUnits(currentDeviceHardwareParams);
-  });
+  bindDeviceHardwareEvents();
+  loadDeviceHardwareUnits(currentDeviceHardwareParams);
 });
 
+function bindDeviceHardwareEvents() {
+  $('#btnOpenCreateModal')
+    .off('click')
+    .on('click', openCreateModal);
+
+  $('#filterDeviceHardwareForm')
+    .off('submit')
+    .on('submit', function (e) {
+      e.preventDefault();
+
+      const formData = Object.fromEntries(new FormData(this));
+
+      currentDeviceHardwareParams = {
+        ...currentDeviceHardwareParams,
+        ...formData,
+        page: 1,
+        limit: currentDeviceHardwareParams.limit || 10
+      };
+
+      loadDeviceHardwareUnits(currentDeviceHardwareParams);
+    });
+
+  $('#resetDeviceHardwareFilter')
+    .off('click')
+    .on('click', function () {
+      $('#filterDeviceHardwareForm')[0].reset();
+
+      currentDeviceHardwareParams = {
+        page: 1,
+        limit: 10,
+        deviceName: '',
+        hardwareKeyword: ''
+      };
+
+      loadDeviceHardwareUnits(currentDeviceHardwareParams);
+    });
+
+  $('#createDeviceHardwareForm')
+    .off('submit')
+    .on('submit', submitCreateDeviceHardware);
+
+  $('#editDeviceHardwareForm')
+    .off('submit')
+    .on('submit', submitEditDeviceHardware);
+}
+
+function getListFromResponse(res, legacyKey) {
+  if (Array.isArray(res?.[legacyKey])) return res[legacyKey];
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res)) return res;
+
+  return [];
+}
+
+function getPaginationFromResponse(res, fallbackParams = {}) {
+  if (window.AppPagination?.normalizeFromResponse) {
+    return window.AppPagination.normalizeFromResponse(res, fallbackParams);
+  }
+
+  if (res?.meta?.pagination) return res.meta.pagination;
+  if (res?.pagination) return res.pagination;
+
+  const page = Number(res?.currentPage) || Number(fallbackParams.page) || 1;
+  const limit = Number(fallbackParams.limit) || 10;
+  const totalItems =
+    Number(res?.totalItems) ||
+    Number(res?.totalRecords) ||
+    Number(res?.total) ||
+    0;
+
+  const totalPages = Math.max(Math.ceil(totalItems / limit), 1);
+
+  return {
+    page,
+    limit,
+    totalItems,
+    totalPages
+  };
+}
+
+function getErrorMessage(xhr, fallback = 'Có lỗi xảy ra') {
+  return xhr.responseJSON?.message || xhr.responseJSON?.error || fallback;
+}
+
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
 function toggleModal(modalSelector, action = 'open') {
-  document.activeElement?.blur(); // ✅ Gỡ focus trước khi thao tác
+  document.activeElement?.blur();
+
+  if (typeof bootstrap !== 'undefined') {
+    const modalEl = document.querySelector(modalSelector);
+    if (!modalEl) return;
+
+    let modalInstance = bootstrap.Modal.getInstance(modalEl);
+
+    if (!modalInstance) {
+      modalInstance = new bootstrap.Modal(modalEl);
+    }
+
+    if (action === 'open') {
+      modalInstance.show();
+    } else {
+      modalInstance.hide();
+
+      setTimeout(() => {
+        $('body').css('overflow', 'auto').removeClass('modal-open');
+        $('.modal-backdrop').remove();
+      }, 300);
+    }
+
+    return;
+  }
 
   if (action === 'open') {
     $(modalSelector).modal('show');
-  } else if (action === 'close') {
+  } else {
     $(modalSelector).modal('hide');
-    setTimeout(() => {
-      $('body').css('overflow', 'auto').removeClass('modal-open');
-      $('.modal-backdrop').remove();
-    }, 500);
   }
 }
 
+function showSuccess(message) {
+  if (typeof Swal !== 'undefined') {
+    Swal.fire({
+      icon: 'success',
+      title: 'Thành công',
+      text: message,
+      timer: 1500,
+      showConfirmButton: false
+    });
+    return;
+  }
+
+  alert(message);
+}
+
+function showError(message) {
+  if (typeof Swal !== 'undefined') {
+    Swal.fire({
+      icon: 'error',
+      title: 'Lỗi',
+      text: message
+    });
+    return;
+  }
+
+  alert(message);
+}
+
+function showDeviceHardwareLoading() {
+  $('#deviceHardwareTable').html(`
+    <tr>
+      <td colspan="3" class="text-center py-4">
+        <div class="spinner-border" role="status"></div>
+        <div class="mt-2">Đang tải dữ liệu...</div>
+      </td>
+    </tr>
+  `);
+}
+
 function renderHardwareOption(hw, selectedIds = []) {
-  const selected = selectedIds.includes(hw.id) ? 'selected' : '';
+  const hwId = Number(hw.id);
+  const selected = selectedIds.map(Number).includes(hwId) ? 'selected' : '';
   const disabled = hw.isUnderRepair ? 'disabled' : '';
   const style = hw.isUnderRepair ? 'style="color:red;"' : '';
-  return `<option value="${hw.id}" ${selected} ${disabled} ${style}>${hw.hardwareName} - ${hw.serialNumber}</option>`;
+
+  const label = `${hw.hardwareName || hw.name || ''} - ${hw.serialNumber || ''}`;
+
+  return `
+    <option value="${escapeHtml(hw.id)}" ${selected} ${disabled} ${style}>
+      ${escapeHtml(label)}
+    </option>
+  `;
 }
 
 function loadDeviceHardwareUnits(params = {}) {
-  currentDeviceHardwareParams = { ...currentDeviceHardwareParams, ...params };
+  currentDeviceHardwareParams = {
+    ...currentDeviceHardwareParams,
+    ...params
+  };
 
-  $.get('/device-hardware/ajax', currentDeviceHardwareParams, function (res) {
-    const data = res.data || [];
-    const tbody = $('#deviceHardwareTable');
-    tbody.empty();
+  showDeviceHardwareLoading();
 
-    if (data.length === 0) {
-      tbody.append('<tr><td colspan="3" class="text-center text-muted">Không có dữ liệu</td></tr>');
-    } else {
-      const rows = data.map(item => `
+  $.get('/device-hardware/ajax', currentDeviceHardwareParams)
+    .done(function (res) {
+      const devices = getListFromResponse(res, 'devices');
+      const pagination = getPaginationFromResponse(res, currentDeviceHardwareParams);
+
+      renderDeviceHardwareTable(devices);
+      renderDeviceHardwarePagination(pagination);
+
+      currentDeviceHardwareParams.page = pagination.page;
+      currentDeviceHardwareParams.limit = pagination.limit;
+    })
+    .fail(function (xhr) {
+      $('#deviceHardwareTable').html(`
         <tr>
-          <td>${item.deviceCode} - ${item.deviceName} (${item.deviceType || ''})</td>
-          <td>
-            ${(item.hardwareUnits || []).map(hw => {
-              const color = hw.isUnderRepair ? 'color:red;' : '';
-              return `<span class="badge text-bg-secondary me-2 mb-1" style="${color}" title="Serial: ${hw.serialNumber}">
-                ${hw.hardwareName}
-                <button class="btn-close btn-close-white btn-sm ms-1" onclick="detachHardware(${hw.id}, ${item.deviceId})"></button>
-              </span>`;
-            }).join('')}
+          <td colspan="3" class="text-center text-danger py-4">
+            ${escapeHtml(getErrorMessage(xhr, 'Lỗi khi tải danh sách phân bổ phần cứng'))}
           </td>
-          <td><button class="btn btn-sm btn-warning" onclick="openEditModal(${item.deviceId})">⚙️ Sửa</button></td>
         </tr>
-      `).join('');
+      `);
 
-      tbody.html(rows);
-    }
-
-    renderPagination(res.pagination);
-  });
+      renderDeviceHardwarePagination({
+        page: 1,
+        limit: currentDeviceHardwareParams.limit,
+        totalItems: 0,
+        totalPages: 1
+      });
+    });
 }
 
-function renderPagination(pagination) {
-  const container = $('#deviceHardwarePagination');
-  container.empty();
+function renderDeviceHardwareTable(devices) {
+  const tbody = $('#deviceHardwareTable');
+  tbody.empty();
 
-  if (!pagination || pagination.totalPages <= 1) return;
+  if (!Array.isArray(devices) || devices.length === 0) {
+    tbody.append(`
+      <tr>
+        <td colspan="3" class="text-center text-muted">
+          Không có dữ liệu
+        </td>
+      </tr>
+    `);
+    return;
+  }
+
+  const rows = devices.map((item) => {
+    const hardwareBadges = (item.hardwareUnits || [])
+      .map((hw) => {
+        const color = hw.isUnderRepair ? 'color:red;' : '';
+        const title = `Serial: ${hw.serialNumber || ''}`;
+
+        return `
+          <span
+            class="badge text-bg-secondary me-2 mb-1"
+            style="${color}"
+            title="${escapeHtml(title)}"
+          >
+            ${escapeHtml(hw.hardwareName || '')}
+
+            <button
+              type="button"
+              class="btn-close btn-close-white btn-sm ms-1"
+              onclick="detachHardware(${hw.id}, ${item.deviceId})"
+            ></button>
+          </span>
+        `;
+      })
+      .join('');
+
+    return `
+      <tr>
+        <td>
+          ${escapeHtml(item.deviceCode || '')} -
+          ${escapeHtml(item.deviceName || '')}
+          (${escapeHtml(item.deviceType || '')})
+        </td>
+
+        <td>
+          ${hardwareBadges || '<span class="text-muted">Chưa có phần cứng</span>'}
+        </td>
+
+        <td>
+          <button
+            class="btn btn-sm btn-warning"
+            onclick="openEditModal(${item.deviceId})"
+          >
+            ⚙️ Sửa
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  tbody.html(rows);
+}
+
+function renderDeviceHardwarePagination(pagination) {
+  if (window.AppPagination?.render) {
+    window.AppPagination.render({
+      containerSelector: '#deviceHardwarePagination',
+      pagination,
+      windowSize: 10,
+      onPageChange: changeDeviceHardwarePage
+    });
+
+    return;
+  }
 
   const page = Number(pagination.page) || 1;
   const totalPages = Number(pagination.totalPages) || 1;
 
-  const windowSize = 10;       // tối đa 10 trang
-  const leftCount = 5;         // 5 trang trước
-  const rightCount = 4;        // 4 trang sau -> tổng 10 (gồm trang hiện tại)
-
-  let start = Math.max(1, page - leftCount);
-  let end = Math.min(totalPages, page + rightCount);
-
-  // Nếu chưa đủ 10 trang, bù sang phía còn thiếu
-  const shown = end - start + 1;
-  if (shown < windowSize) {
-    const need = windowSize - shown;
-
-    // ưu tiên bù về phía trước nếu end đã chạm trần
-    start = Math.max(1, start - need);
-    // nếu vẫn thiếu (vì start đã chạm 1), bù về phía sau
-    end = Math.min(totalPages, start + windowSize - 1);
-  }
-
-  const makeBtn = (label, target, disabled = false, active = false) => {
-    const cls = active ? 'btn-primary' : 'btn-outline-primary';
-    return $(`
-      <button class="btn btn-sm ${cls} mx-1" ${disabled ? 'disabled' : ''}>
-        ${label}
+  $('#deviceHardwarePagination').html(`
+    <div class="d-flex flex-wrap justify-content-center gap-2">
+      <button
+        class="btn btn-sm btn-outline-primary"
+        ${page <= 1 ? 'disabled' : ''}
+        onclick="changeDeviceHardwarePage(${page - 1})"
+      >
+        ‹
       </button>
-    `).on('click', () => {
-      if (!disabled) changePage(target);
-    });
-  };
 
-  // Đầu + Trước
-  container.append(makeBtn('‹', page - 1, page <= 1));
+      <span class="align-self-center">
+        Trang ${page} / ${totalPages}
+      </span>
 
-  // Nếu có khoảng trống phía trước, hiển thị "..."
-  if (start > 1) {
-    container.append(makeBtn('1', 1, false, page === 1));
-    if (start > 2) container.append($(`<span class="mx-1">…</span>`));
-  }
-
-  // Các trang trong cửa sổ
-  for (let p = start; p <= end; p++) {
-    container.append(makeBtn(String(p), p, false, p === page));
-  }
-
-  // Nếu có khoảng trống phía sau, hiển thị "..."
-  if (end < totalPages) {
-    if (end < totalPages - 1) container.append($(`<span class="mx-1">…</span>`));
-    container.append(makeBtn(String(totalPages), totalPages, false, page === totalPages));
-  }
-
-  // Sau + Cuối
-  container.append(makeBtn('›', page + 1, page >= totalPages));
+      <button
+        class="btn btn-sm btn-outline-primary"
+        ${page >= totalPages ? 'disabled' : ''}
+        onclick="changeDeviceHardwarePage(${page + 1})"
+      >
+        ›
+      </button>
+    </div>
+  `);
 }
 
-function changePage(page) {
-  if (page < 1) return;
-  loadDeviceHardwareUnits({ page });
+function changeDeviceHardwarePage(page) {
+  const targetPage = Number(page);
+
+  if (!targetPage || targetPage < 1) return;
+
+  currentDeviceHardwareParams.page = targetPage;
+  loadDeviceHardwareUnits(currentDeviceHardwareParams);
 }
 
 /* =========================
    MODALS: CREATE / EDIT
 ========================= */
 
-function openCreateModal() {
-  toggleModal('#createDeviceHardwareModal', 'open');
+function destroySelect2IfNeeded(selector) {
+  if (!$.fn.select2) return;
 
-  const deviceDropdown = $('#createDeviceDropdown').empty();
-  const hwDropdown = $('#createHardwareUnitsDropdown').empty();
+  try {
+    if ($(selector).hasClass('select2-hidden-accessible')) {
+      $(selector).select2('destroy');
+    }
+  } catch (_) {}
+}
 
-  $.get('/device-hardware/devices/ungrouped', function (data) {
-    (data.devices || []).forEach(d => {
-      const label = `${d.code} - ${d.name} (${d.deviceType})`;
-      deviceDropdown.append(`<option value="${d.id}">${label}</option>`);
-    });
-    deviceDropdown.select2({ dropdownParent: '#createDeviceHardwareModal', width: '100%' });
-  });
+function initSelect2(selector, options = {}) {
+  if (!$.fn.select2) return;
 
-  $.get('/device-hardware/hardware-units/create', function (data) {
-    (data.units || []).forEach(hw => hwDropdown.append(renderHardwareOption(hw, [])));
-
-    hwDropdown.select2({
-      dropdownParent: '#createDeviceHardwareModal',
-      width: '100%',
-      multiple: true,
-      placeholder: 'Tìm phần cứng theo tên hoặc serial...',
-      allowClear: true,
-      matcher: function (params, data) {
-        if ($.trim(params.term) === '') return data;
-        if (typeof data.text === 'undefined') return null;
-
-        const term = params.term.toLowerCase();
-        const text = data.text.toLowerCase();
-        const serial = data.text.split(' - ')[1]?.toLowerCase() || '';
-
-        return (text.includes(term) || serial.includes(term)) ? data : null;
-      }
-    });
+  $(selector).select2({
+    width: '100%',
+    ...options
   });
 }
 
-function openEditModal(deviceId) {
-  toggleModal('#editDeviceHardwareModal', 'open');
+function openCreateModal() {
+  const deviceDropdown = $('#createDeviceDropdown');
+  const hwDropdown = $('#createHardwareUnitsDropdown');
 
-  const deviceDropdown = $('#editDeviceDropdown').empty();
-  const hwDropdown = $('#editHardwareUnitsDropdown').empty();
+  destroySelect2IfNeeded('#createDeviceDropdown');
+  destroySelect2IfNeeded('#createHardwareUnitsDropdown');
 
-  $.get('/device-hardware/' + deviceId + '/assigned', function (data) {
-    const assignedIds = (data.assigned || []).map(hw => hw.id);
+  deviceDropdown.empty();
+  hwDropdown.empty();
 
-    $.get('/device-hardware/devices/ungrouped', { includeId: deviceId }, function (devData) {
-      (devData.devices || []).forEach(d => {
-        const label = `${d.code} - ${d.name} (${d.deviceType})`;
-        deviceDropdown.append(`<option value="${d.id}">${label}</option>`);
+  $.get('/device-hardware/devices/ungrouped')
+    .done(function (res) {
+      const devices = getListFromResponse(res, 'devices');
+
+      deviceDropdown.append('<option value="">-- Chọn thiết bị --</option>');
+
+      devices.forEach((d) => {
+        const label = `${d.code || d.deviceCode || ''} - ${d.name || d.deviceName || ''} (${d.deviceType || ''})`;
+
+        deviceDropdown.append(`
+          <option value="${escapeHtml(d.id)}">
+            ${escapeHtml(label)}
+          </option>
+        `);
       });
-      deviceDropdown.val(deviceId).trigger('change');
-      deviceDropdown.select2({ dropdownParent: '#editDeviceHardwareModal', width: '100%' });
+
+      initSelect2('#createDeviceDropdown', {
+        dropdownParent: $('#createDeviceHardwareModal'),
+        placeholder: 'Chọn thiết bị...',
+        allowClear: true
+      });
+    })
+    .fail((xhr) => {
+      showError(getErrorMessage(xhr, 'Lỗi khi tải danh sách thiết bị'));
     });
 
-    $.get('/device-hardware/hardware-units/edit', { deviceId, includeIds: assignedIds.join(',') }, function (unitData) {
-      (unitData.units || []).forEach(hw => hwDropdown.append(renderHardwareOption(hw, assignedIds)));
-      hwDropdown.select2({ dropdownParent: '#editDeviceHardwareModal', width: '100%', multiple: true });
+  $.get('/device-hardware/hardware-units/create')
+    .done(function (res) {
+      const units = getListFromResponse(res, 'units');
+
+      units.forEach((hw) => {
+        hwDropdown.append(renderHardwareOption(hw, []));
+      });
+
+      initSelect2('#createHardwareUnitsDropdown', {
+        dropdownParent: $('#createDeviceHardwareModal'),
+        multiple: true,
+        placeholder: 'Tìm phần cứng theo tên hoặc serial...',
+        allowClear: true,
+        matcher: matchHardwareOption
+      });
+    })
+    .fail((xhr) => {
+      showError(getErrorMessage(xhr, 'Lỗi khi tải danh sách phần cứng'));
     });
-  });
+
+  toggleModal('#createDeviceHardwareModal', 'open');
+}
+
+function openEditModal(deviceId) {
+  const deviceDropdown = $('#editDeviceDropdown');
+  const hwDropdown = $('#editHardwareUnitsDropdown');
+
+  destroySelect2IfNeeded('#editDeviceDropdown');
+  destroySelect2IfNeeded('#editHardwareUnitsDropdown');
+
+  deviceDropdown.empty();
+  hwDropdown.empty();
+
+  $.get(`/device-hardware/${deviceId}/assigned`)
+    .done(function (res) {
+      const assigned = getListFromResponse(res, 'assigned');
+      const assignedIds = assigned.map((hw) => Number(hw.id));
+
+      $.get('/device-hardware/devices/ungrouped', { includeId: deviceId })
+        .done(function (devRes) {
+          const devices = getListFromResponse(devRes, 'devices');
+
+          devices.forEach((d) => {
+            const label = `${d.code || d.deviceCode || ''} - ${d.name || d.deviceName || ''} (${d.deviceType || ''})`;
+
+            deviceDropdown.append(`
+              <option value="${escapeHtml(d.id)}">
+                ${escapeHtml(label)}
+              </option>
+            `);
+          });
+
+          deviceDropdown.val(String(deviceId)).trigger('change');
+
+          initSelect2('#editDeviceDropdown', {
+            dropdownParent: $('#editDeviceHardwareModal')
+          });
+        });
+
+      $.get('/device-hardware/hardware-units/edit', {
+        deviceId,
+        includeIds: assignedIds.join(',')
+      })
+        .done(function (unitRes) {
+          const units = getListFromResponse(unitRes, 'units');
+
+          units.forEach((hw) => {
+            hwDropdown.append(renderHardwareOption(hw, assignedIds));
+          });
+
+          initSelect2('#editHardwareUnitsDropdown', {
+            dropdownParent: $('#editDeviceHardwareModal'),
+            multiple: true,
+            placeholder: 'Chọn phần cứng...',
+            allowClear: true,
+            matcher: matchHardwareOption
+          });
+        });
+    })
+    .fail((xhr) => {
+      showError(getErrorMessage(xhr, 'Lỗi khi tải thông tin phần cứng đã gán'));
+    });
+
+  toggleModal('#editDeviceHardwareModal', 'open');
+}
+
+function matchHardwareOption(params, data) {
+  if ($.trim(params.term) === '') return data;
+  if (typeof data.text === 'undefined') return null;
+
+  const term = params.term.toLowerCase();
+  const text = data.text.toLowerCase();
+
+  return text.includes(term) ? data : null;
 }
 
 /* =========================
@@ -226,41 +507,96 @@ function openEditModal(deviceId) {
 ========================= */
 
 function detachHardware(hardwareUnitId, deviceId) {
-  $.ajax({
-    url: `/device-hardware/${deviceId}/detach/${hardwareUnitId}`,
-    method: 'DELETE',
-    success: () => loadDeviceHardwareUnits(currentDeviceHardwareParams)
+  if (typeof Swal === 'undefined') {
+    if (!confirm('Gỡ phần cứng này khỏi thiết bị?')) return;
+
+    $.ajax({
+      url: `/device-hardware/${deviceId}/detach/${hardwareUnitId}`,
+      method: 'DELETE'
+    })
+      .done(() => loadDeviceHardwareUnits(currentDeviceHardwareParams))
+      .fail((xhr) => showError(getErrorMessage(xhr, 'Không thể gỡ phần cứng')));
+
+    return;
+  }
+
+  Swal.fire({
+    title: 'Gỡ phần cứng?',
+    text: 'Phần cứng này sẽ được gỡ khỏi thiết bị.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Gỡ',
+    cancelButtonText: 'Hủy'
+  }).then((result) => {
+    if (!result.isConfirmed) return;
+
+    $.ajax({
+      url: `/device-hardware/${deviceId}/detach/${hardwareUnitId}`,
+      method: 'DELETE'
+    })
+      .done((res) => {
+        showSuccess(res.message || 'Đã gỡ phần cứng khỏi thiết bị');
+        loadDeviceHardwareUnits(currentDeviceHardwareParams);
+      })
+      .fail((xhr) => {
+        showError(getErrorMessage(xhr, 'Không thể gỡ phần cứng'));
+      });
   });
 }
 
-$('#createDeviceHardwareForm').on('submit', function (e) {
+function submitCreateDeviceHardware(e) {
   e.preventDefault();
+
   const deviceId = $('#createDeviceDropdown').val();
-  const hardwareUnitIds = $('#createHardwareUnitsDropdown').val();
+  const hardwareUnitIds = $('#createHardwareUnitsDropdown').val() || [];
+
+  if (!deviceId) {
+    showError('Vui lòng chọn thiết bị');
+    return;
+  }
+
+  if (!hardwareUnitIds.length) {
+    showError('Vui lòng chọn ít nhất một phần cứng');
+    return;
+  }
 
   $.ajax({
     url: `/device-hardware/${deviceId}/update`,
     method: 'PUT',
-    data: { hardwareUnitIds },
-    success: () => {
+    data: { hardwareUnitIds }
+  })
+    .done((res) => {
       toggleModal('#createDeviceHardwareModal', 'close');
+      showSuccess(res.message || 'Đã gán phần cứng cho thiết bị');
       loadDeviceHardwareUnits(currentDeviceHardwareParams);
-    }
-  });
-});
+    })
+    .fail((xhr) => {
+      showError(getErrorMessage(xhr, 'Không thể gán phần cứng'));
+    });
+}
 
-$('#editDeviceHardwareForm').on('submit', function (e) {
+function submitEditDeviceHardware(e) {
   e.preventDefault();
+
   const deviceId = $('#editDeviceDropdown').val();
-  const hardwareUnitIds = $('#editHardwareUnitsDropdown').val();
+  const hardwareUnitIds = $('#editHardwareUnitsDropdown').val() || [];
+
+  if (!deviceId) {
+    showError('Không xác định được thiết bị cần cập nhật');
+    return;
+  }
 
   $.ajax({
     url: `/device-hardware/${deviceId}/update`,
     method: 'PUT',
-    data: { hardwareUnitIds },
-    success: () => {
+    data: { hardwareUnitIds }
+  })
+    .done((res) => {
       toggleModal('#editDeviceHardwareModal', 'close');
+      showSuccess(res.message || 'Đã cập nhật phần cứng cho thiết bị');
       loadDeviceHardwareUnits(currentDeviceHardwareParams);
-    }
-  });
-});
+    })
+    .fail((xhr) => {
+      showError(getErrorMessage(xhr, 'Không thể cập nhật phần cứng'));
+    });
+}

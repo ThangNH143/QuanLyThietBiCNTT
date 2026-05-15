@@ -2,6 +2,50 @@
 
 > Tài liệu này mô tả bối cảnh kỹ thuật, domain, kiến trúc, quy ước xử lý và định hướng chuẩn hóa cho dự án **QuanLyThietBiCNTT**. Mục tiêu là giúp developer hoặc mô hình AI tiếp tục phát triển dự án mà không hiểu sai nghiệp vụ, không phá vỡ cấu trúc hiện có và từng bước chuẩn hóa toàn bộ module theo cùng một mô hình xử lý/hiển thị.
 
+
+---
+
+## CẬP NHẬT TRẠNG THÁI CHUẨN HÓA — 2026-05-15
+
+Tài liệu này đã được cập nhật sau đợt chuẩn hóa dự án gần nhất. Các thay đổi quan trọng đã thực hiện:
+
+- Đã thêm và đưa vào sử dụng các helper nền tảng chung:
+  - `utils/apiResponse.js`
+  - `utils/pagination.js`
+  - `utils/asyncHandler.js`
+  - `middleware/errorHandler.js`
+  - `public/js/common/pagination.js`
+- Đã xử lý lỗi ES Module import/export:
+  - Tất cả import nội bộ phải có đuôi `.js`.
+  - Middleware/helper export default phải export trực tiếp function/object đúng kiểu.
+- Đã chuẩn hóa phân trang frontend sang component dùng chung `window.AppPagination`.
+- Đã refactor/chuẩn hóa các module chính theo hướng tương thích ngược:
+  - `hardware-types`
+  - `hardwares`
+  - `assignments`
+  - `repairs`
+  - `device-hardware-units`
+- Các response API mới ưu tiên format:
+
+```json
+{
+  "success": true,
+  "message": "...",
+  "data": [],
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "totalItems": 0,
+      "totalPages": 1
+    }
+  }
+}
+```
+
+- Trong giai đoạn chuyển tiếp, nhiều API vẫn giữ thêm legacy keys như `devices`, `repairs`, `assignments`, `units`, `pagination` để frontend cũ không bị vỡ.
+- Lưu ý: một số nghiệp vụ như **gán mới assignment** và **thu hồi assignment** đã được chuẩn hóa code nhưng chưa được test sâu do phụ thuộc dữ liệu thực tế.
+
 ---
 
 ## 1. Tổng quan dự án
@@ -1376,3 +1420,1106 @@ Cùng cách xử lý dropdown/phụ thuộc dữ liệu
 ```
 
 Sau khi chuẩn hóa, dự án sẽ dễ mở rộng, dễ debug và AI/dev khác có thể tiếp tục phát triển mà ít gây lỗi kỹ thuật hơn.
+
+
+---
+
+## 24. Các công việc chuẩn hóa đã thực hiện xong
+
+Phần này ghi lại cụ thể các việc đã hoàn thành trong quá trình chuẩn hóa gần nhất để AI/developer sau này không phải suy luận lại từ đầu.
+
+### 24.1 Helper backend đã thêm
+
+Đã tạo và đưa vào sử dụng các file backend dùng chung:
+
+```text
+utils/apiResponse.js
+utils/pagination.js
+utils/asyncHandler.js
+middleware/errorHandler.js
+```
+
+#### `utils/apiResponse.js`
+
+Dùng để trả response JSON thống nhất:
+
+```js
+apiResponse.success(res, data, message, meta, statusCode)
+apiResponse.error(res, message, statusCode, errors)
+```
+
+Chuẩn thành công:
+
+```json
+{
+  "success": true,
+  "message": "Success",
+  "data": {}
+}
+```
+
+Chuẩn lỗi:
+
+```json
+{
+  "success": false,
+  "message": "Nội dung lỗi"
+}
+```
+
+#### `utils/pagination.js`
+
+Dùng để normalize input phân trang và build pagination response:
+
+```js
+normalizePagination(req.query, 10)
+buildPagination(totalItems, page, limit)
+```
+
+Chuẩn pagination:
+
+```json
+{
+  "page": 1,
+  "limit": 10,
+  "totalItems": 100,
+  "totalPages": 10
+}
+```
+
+#### `utils/asyncHandler.js`
+
+Dùng để bọc async controller:
+
+```js
+router.get('/ajax', asyncHandler(controllerFunction));
+```
+
+Mục tiêu là đưa lỗi async về `errorHandler`, tránh lặp `try/catch` trong controller.
+
+#### `middleware/errorHandler.js`
+
+Đã chuẩn hóa import đúng theo ES Module:
+
+```js
+import apiResponse from '../utils/apiResponse.js';
+```
+
+Và export trực tiếp function:
+
+```js
+export default errorHandler;
+```
+
+Không export dạng object như:
+
+```js
+export default { errorHandler };
+```
+
+vì Express cần middleware function trực tiếp.
+
+---
+
+### 24.2 Quy tắc ES Module đã xác nhận
+
+Dự án dùng ES Module (`type: module`), vì vậy:
+
+1. Import nội bộ phải có đuôi `.js`.
+
+Đúng:
+
+```js
+import apiResponse from '../utils/apiResponse.js';
+import asyncHandler from '../utils/asyncHandler.js';
+import errorHandler from './middleware/errorHandler.js';
+```
+
+Sai:
+
+```js
+import apiResponse from '../utils/apiResponse';
+import asyncHandler from '../utils/asyncHandler';
+```
+
+2. Nếu file được import default thì file đó phải có `export default`.
+
+Ví dụ route:
+
+```js
+export default router;
+```
+
+3. Nếu `index.js` import:
+
+```js
+import repairRoutes from './routes/repair.js';
+```
+
+thì `routes/repair.js` bắt buộc phải có:
+
+```js
+export default router;
+```
+
+---
+
+### 24.3 Helper frontend đã thêm
+
+Đã tạo:
+
+```text
+public/js/common/pagination.js
+```
+
+File này cung cấp global helper:
+
+```js
+window.AppPagination.render(...)
+window.AppPagination.normalizeFromResponse(...)
+```
+
+Mục tiêu:
+
+- Dùng chung giao diện phân trang kiểu:
+
+```text
+‹ 1 ... 5 6 7 8 9 10 ... 41 ›
+```
+
+- Không để mỗi module tự viết phân trang riêng.
+- Đọc được nhiều kiểu response:
+  - `res.meta.pagination`
+  - `res.pagination`
+  - legacy `res.total`, `res.currentPage`
+
+Mỗi view dùng pagination chung phải load script theo thứ tự:
+
+```html
+<script src="/js/common/pagination.js"></script>
+<script src="/js/<module>.js"></script>
+```
+
+Nếu Bootstrap JS chưa được include trong partial header thì load Bootstrap trước:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/js/common/pagination.js"></script>
+<script src="/js/<module>.js"></script>
+```
+
+---
+
+## 25. Trạng thái chuẩn hóa từng module
+
+### 25.1 `hardware-types`
+
+Trạng thái:
+
+```text
+✅ Đã chuẩn hóa controller/service/route/frontend theo pattern mới.
+✅ Đã dùng apiResponse, pagination helper, asyncHandler.
+✅ Đã xử lý lỗi import/export ES Module.
+✅ Đã chạy thành công.
+```
+
+Ghi chú quan trọng:
+
+- Đây là module mẫu đầu tiên dùng để nhân rộng sang các module khác.
+- API `/hardware-types/ajax` nên trả format mới nhưng vẫn có thể giữ legacy keys trong giai đoạn chuyển tiếp.
+- Route có thể hỗ trợ song song REST mới và route cũ nếu frontend chưa đổi hết.
+
+---
+
+### 25.2 `hardwares`
+
+Trạng thái:
+
+```text
+✅ Đã sửa lỗi không hiển thị dữ liệu.
+✅ Đã xử lý mismatch response giữa /hardware-types/ajax và hardwares.js.
+✅ Đã thêm logic đọc được cả response mới và cũ:
+   - res.data
+   - res.hardwares
+   - res.hardwareTypes
+✅ Đã chuẩn hóa phân trang sang AppPagination.
+✅ Đã chạy và hiển thị dữ liệu ổn.
+```
+
+Lỗi đã gặp:
+
+```text
+getListFromResponse is not defined
+```
+
+Nguyên nhân:
+
+- `hardwares.js` gọi helper `getListFromResponse()` nhưng hàm chưa được khai báo hoặc chưa được load từ common.
+
+Cách xử lý đã áp dụng:
+
+- Thêm local helper `getListFromResponse(res, legacyKey)` vào `hardwares.js`.
+- Hoặc load helper từ common nếu đã gom chung.
+
+Ghi chú:
+
+- Khi module hardwares cần dropdown loại phần cứng, phải đảm bảo `/hardware-types/ajax` trả data đọc được bằng `res.data` hoặc `res.hardwareTypes`.
+
+---
+
+### 25.3 `assignments`
+
+Trạng thái:
+
+```text
+✅ Đã hiển thị lại danh sách.
+✅ Đã thêm /js/common/pagination.js vào EJS.
+✅ Đã phân trang bằng AppPagination.
+✅ Đã chuẩn hóa frontend để đọc response mới/cũ.
+✅ Đã chuẩn hóa controller/service/route theo apiResponse + asyncHandler.
+✅ Các chức năng hiển thị, lọc, phân trang, sửa, xóa cơ bản đã ổn.
+⏳ Gán mới chưa test sâu.
+⏳ Thu hồi chưa test sâu.
+```
+
+Các file liên quan:
+
+```text
+routes/assignment.js
+controllers/deviceAssignmentController.js
+services/deviceAssignmentService.js
+views/device-assignments/index.ejs
+public/js/assignments.js
+```
+
+Các endpoint chính:
+
+```text
+GET    /assignments
+GET    /assignments/ajax
+GET    /assignments/departments/ajax
+GET    /assignments/available-devices
+POST   /assignments
+PUT    /assignments/:id
+PUT    /assignments/:id/revoke
+DELETE /assignments/:id
+```
+
+Các điểm đã xử lý:
+
+1. `index.ejs` cần load:
+
+```html
+<script src="/js/common/pagination.js"></script>
+<script src="/js/assignments.js"></script>
+```
+
+2. Bảng HTML cần đúng cấu trúc, không đặt `<div>` bên trong `<table>`.
+
+3. Frontend cần đọc được:
+
+```js
+res.data
+res.assignments
+res.meta.pagination
+res.pagination
+```
+
+4. Nút sửa assignment trước đó truyền object nhưng function nhận tham số kiểu cũ. Đã chuyển sang cách truyền object an toàn bằng `encodeURIComponent(JSON.stringify(item))`.
+
+5. Dropdown departments cần đọc được cả:
+
+```js
+res.data
+res.departments
+res // array trực tiếp
+```
+
+Business rules cần test lại khi có dữ liệu phù hợp:
+
+- Thiết bị đang assignment active không được xuất hiện trong `/assignments/available-devices`.
+- `POST /assignments` không cho gán trùng thiết bị đang active.
+- `PUT /assignments/:id/revoke` phải:
+  - Không thu hồi lại nếu đã revoked.
+  - Set `endDate` đúng.
+  - Sau khi thu hồi, thiết bị có thể quay lại danh sách available nếu rule cho phép.
+
+---
+
+### 25.4 `repairs`
+
+Trạng thái:
+
+```text
+✅ Đã chuẩn hóa route/controller/service/frontend.
+✅ Đã đưa dropdown routes lên trước /:id để tránh Express match nhầm.
+✅ Đã chuẩn hóa response format mới + legacy compatibility.
+✅ Đã load common pagination trong view.
+✅ Đã xử lý lỗi export default route.
+✅ Server đã chạy ổn sau khi sửa route file.
+```
+
+Các file liên quan:
+
+```text
+routes/repair.js
+controllers/repairController.js
+services/repairService.js
+views/repairs/index.ejs
+public/js/repairs.js
+```
+
+Lỗi đã gặp:
+
+```text
+SyntaxError: The requested module './routes/repair.js' does not provide an export named 'default'
+```
+
+Nguyên nhân:
+
+- `index.js` import default:
+
+```js
+import repairRoutes from './routes/repair.js';
+```
+
+nhưng `routes/repair.js` không có `export default router;`.
+
+Cách xử lý:
+
+- Đảm bảo cuối `routes/repair.js` có:
+
+```js
+export default router;
+```
+
+Điểm quan trọng của route repairs:
+
+```js
+router.get('/dropdown/devices', ...)
+router.get('/dropdown/hardware-units', ...)
+router.get('/dropdown/users', ...)
+router.get('/:id', ...)
+```
+
+Các route `/dropdown/...` phải đặt trước `/:id`.
+
+Business rules cần test tiếp:
+
+- Tạo phiếu sửa.
+- Sửa phiếu sửa.
+- Xóa phiếu chỉ khi trạng thái `opened`.
+- Khi chọn thiết bị trong modal tạo, dropdown phần cứng phải loại trừ các hardware unit đang có repair `opened` hoặc `in-progress`.
+- Khi edit, phải include hardware unit hiện tại để không mất liên kết.
+
+---
+
+### 25.5 `device-hardware-units`
+
+Trạng thái:
+
+```text
+✅ Đã chuẩn hóa controller/service/route/frontend theo pattern mới.
+✅ Đã chuyển phân trang riêng sang AppPagination.
+✅ Đã chuẩn hóa response mới + legacy compatibility.
+✅ Đã xử lý update assigned hardware units.
+✅ Đã xử lý detach hardware unit.
+✅ Tạm thời người dùng kiểm tra thấy ổn.
+```
+
+Các file liên quan:
+
+```text
+routes/deviceHardwareUnit.js
+controllers/deviceHardwareUnitController.js
+services/deviceHardwareUnitService.js
+views/device-hardware-units/index.ejs
+public/js/deviceHardwareUnits.js
+```
+
+Các endpoint chính:
+
+```text
+GET    /device-hardware
+GET    /device-hardware/ajax
+GET    /device-hardware/devices/ungrouped
+GET    /device-hardware/hardware-units/create
+GET    /device-hardware/hardware-units/edit
+GET    /device-hardware/:deviceId/assigned
+PUT    /device-hardware/:deviceId/update
+DELETE /device-hardware/:deviceId/detach/:hardwareUnitId
+```
+
+Các điểm đã xử lý:
+
+1. Service đổi từ `{ data, pagination: { totalRecords } }` sang controller build chuẩn:
+
+```json
+{
+  "success": true,
+  "data": [],
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "totalItems": 0,
+      "totalPages": 1
+    }
+  }
+}
+```
+
+2. Vẫn giữ legacy keys:
+
+```json
+{
+  "devices": [],
+  "pagination": {}
+}
+```
+
+3. Frontend đọc được cả:
+
+```js
+res.data
+res.devices
+res.meta.pagination
+res.pagination
+```
+
+4. View cần load:
+
+```html
+<script src="/js/common/pagination.js"></script>
+<script src="/js/deviceHardwareUnits.js"></script>
+```
+
+Business rules cần test tiếp:
+
+- Khi gán phần cứng mới, chỉ hiển thị thiết bị chưa có phần cứng nếu rule vẫn như hiện tại.
+- Khi sửa, dropdown thiết bị phải include device hiện tại.
+- Khi sửa, hardware units phải include các unit đang gán hiện tại.
+- Không gán trùng hardwareUnit cho nhiều device.
+- Không detach hardware unit nếu đang có repair active, nếu SP có rule này.
+
+---
+
+### 25.6 Các module danh mục còn lại
+
+Các module sau đã từng được tạo patch chuẩn hóa phase 2 và cần kiểm tra lại theo thực tế code hiện tại nếu chỉnh tiếp:
+
+```text
+departments
+device-types
+devices
+hardware-units
+```
+
+Trạng thái theo hướng chuẩn hóa:
+
+```text
+✅ Đã có hướng chuẩn hóa tương tự hardware-types.
+✅ Đã có patch/logic dùng response mới + legacy compatibility.
+✅ Đã có AppPagination cho frontend nếu view load common pagination đúng thứ tự.
+⚠️ Cần test thực tế từng chức năng create/update/toggle/delete nếu chưa test đủ.
+```
+
+---
+
+## 26. Quy chuẩn response thực tế đang dùng sau đợt chuẩn hóa
+
+Hiện tại dự án đang ở giai đoạn **transition**, nên response nên hỗ trợ cả chuẩn mới và legacy.
+
+### 26.1 List endpoint chuẩn mới
+
+Áp dụng cho:
+
+```text
+/<module>/ajax
+```
+
+Response chính:
+
+```json
+{
+  "success": true,
+  "message": "Lấy danh sách thành công",
+  "data": [],
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "totalItems": 0,
+      "totalPages": 1
+    }
+  }
+}
+```
+
+Response tương thích tạm thời:
+
+```json
+{
+  "success": true,
+  "message": "Lấy danh sách thành công",
+  "data": [],
+  "meta": {
+    "pagination": {}
+  },
+
+  "devices": [],
+  "repairs": [],
+  "assignments": [],
+  "units": [],
+  "departments": [],
+  "pagination": {}
+}
+```
+
+Lưu ý:
+
+- Không phải endpoint nào cũng có tất cả legacy key.
+- Chỉ giữ legacy key tương ứng module để frontend cũ không vỡ.
+- Khi toàn bộ frontend đã đọc `res.data` và `res.meta.pagination`, có thể xóa legacy keys.
+
+### 26.2 Dropdown endpoint chuẩn mới
+
+Response chính:
+
+```json
+{
+  "success": true,
+  "message": "Lấy dữ liệu dropdown thành công",
+  "data": []
+}
+```
+
+Response tương thích:
+
+```json
+{
+  "success": true,
+  "data": [],
+  "devices": [],
+  "units": [],
+  "users": [],
+  "departments": []
+}
+```
+
+Frontend nên dùng helper:
+
+```js
+function getListFromResponse(res, legacyKey) {
+  if (Array.isArray(res?.[legacyKey])) return res[legacyKey];
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res)) return res;
+  return [];
+}
+```
+
+### 26.3 Detail endpoint chuẩn mới
+
+Response chính:
+
+```json
+{
+  "success": true,
+  "message": "Lấy chi tiết thành công",
+  "data": {}
+}
+```
+
+Trong giai đoạn tương thích, có thể spread object detail ra root response nếu frontend cũ đang đọc trực tiếp field:
+
+```js
+return res.json({
+  success: true,
+  message: '...',
+  data: repair,
+  ...repair
+});
+```
+
+### 26.4 Mutation endpoint chuẩn mới
+
+Áp dụng cho create/update/delete/toggle/revoke/detach:
+
+```json
+{
+  "success": true,
+  "message": "Thao tác thành công",
+  "data": null
+}
+```
+
+Lỗi validation:
+
+```json
+{
+  "success": false,
+  "message": "Dữ liệu không hợp lệ"
+}
+```
+
+Lỗi business rule:
+
+```json
+{
+  "success": false,
+  "message": "Không thể thực hiện do vi phạm ràng buộc nghiệp vụ"
+}
+```
+
+HTTP status đề xuất:
+
+```text
+400 Validation error
+404 Not found
+409 Business rule / conflict
+500 System error
+```
+
+---
+
+## 27. Quy chuẩn frontend helper thực tế đang dùng
+
+Nhiều module hiện đang khai báo local helper giống nhau. Có thể gom dần về common sau.
+
+### 27.1 `getListFromResponse`
+
+Dùng cho list/dropdown:
+
+```js
+function getListFromResponse(res, legacyKey) {
+  if (Array.isArray(res?.[legacyKey])) return res[legacyKey];
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res)) return res;
+  return [];
+}
+```
+
+### 27.2 `getPaginationFromResponse`
+
+Dùng cho pagination:
+
+```js
+function getPaginationFromResponse(res, fallbackParams = {}) {
+  if (window.AppPagination?.normalizeFromResponse) {
+    return window.AppPagination.normalizeFromResponse(res, fallbackParams);
+  }
+
+  if (res?.meta?.pagination) return res.meta.pagination;
+  if (res?.pagination) return res.pagination;
+
+  const page = Number(res?.currentPage) || Number(fallbackParams.page) || 1;
+  const limit = Number(fallbackParams.limit) || 10;
+  const totalItems =
+    Number(res?.totalItems) ||
+    Number(res?.totalRecords) ||
+    Number(res?.total) ||
+    0;
+
+  const totalPages = Math.max(Math.ceil(totalItems / limit), 1);
+
+  return { page, limit, totalItems, totalPages };
+}
+```
+
+### 27.3 `escapeHtml`
+
+Dùng để tránh HTML injection khi render dữ liệu DB vào table:
+
+```js
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+```
+
+### 27.4 `toggleModal`
+
+Dùng để đóng/mở modal Bootstrap 5 an toàn, tránh còn backdrop/focus:
+
+```js
+function toggleModal(modalSelector, action = 'open') {
+  document.activeElement?.blur();
+
+  const modalEl = document.querySelector(modalSelector);
+  if (!modalEl) return;
+
+  let modalInstance = bootstrap.Modal.getInstance(modalEl);
+  if (!modalInstance) {
+    modalInstance = new bootstrap.Modal(modalEl);
+  }
+
+  if (action === 'open') {
+    modalInstance.show();
+  } else {
+    modalInstance.hide();
+    setTimeout(() => {
+      $('body').css('overflow', 'auto').removeClass('modal-open');
+      $('.modal-backdrop').remove();
+    }, 300);
+  }
+}
+```
+
+---
+
+## 28. Các lỗi đã gặp và cách xử lý
+
+### 28.1 Lỗi import thiếu `.js`
+
+Lỗi:
+
+```text
+ERR_MODULE_NOT_FOUND: Cannot find module .../utils/apiResponse
+```
+
+Nguyên nhân:
+
+- Project dùng ES Module nên import nội bộ không được bỏ `.js`.
+
+Cách xử lý:
+
+```js
+import apiResponse from '../utils/apiResponse.js';
+```
+
+---
+
+### 28.2 Lỗi export default middleware/helper
+
+Lỗi có thể gặp:
+
+```text
+TypeError: asyncHandler is not a function
+```
+
+hoặc Express không nhận middleware.
+
+Nguyên nhân:
+
+```js
+export default { asyncHandler };
+export default { errorHandler };
+```
+
+Cách xử lý:
+
+```js
+export default asyncHandler;
+export default errorHandler;
+```
+
+---
+
+### 28.3 Lỗi route không provide default export
+
+Lỗi:
+
+```text
+SyntaxError: The requested module './routes/repair.js' does not provide an export named 'default'
+```
+
+Nguyên nhân:
+
+- `index.js` import default nhưng route file không `export default router`.
+
+Cách xử lý:
+
+```js
+export default router;
+```
+
+---
+
+### 28.4 Lỗi dropdown route bị match nhầm bởi `/:id`
+
+Ngữ cảnh:
+
+- Module `repairs`.
+
+Nguyên nhân:
+
+```js
+router.get('/:id', getRepairDetail);
+router.get('/dropdown/devices', getAvailableDevices);
+```
+
+Express có thể match `/dropdown/devices` vào `/:id`.
+
+Cách xử lý:
+
+```js
+router.get('/dropdown/devices', ...);
+router.get('/dropdown/hardware-units', ...);
+router.get('/dropdown/users', ...);
+router.get('/:id', ...);
+```
+
+---
+
+### 28.5 Lỗi helper frontend chưa tồn tại
+
+Lỗi:
+
+```text
+Uncaught ReferenceError: getListFromResponse is not defined
+```
+
+Nguyên nhân:
+
+- File module JS gọi helper nhưng helper chưa khai báo hoặc common script chưa load.
+
+Cách xử lý:
+
+- Khai báo local helper trong file module.
+- Hoặc load common helper trước module JS.
+
+---
+
+### 28.6 Lỗi `window.AppPagination` undefined
+
+Nguyên nhân:
+
+- View chưa load:
+
+```html
+<script src="/js/common/pagination.js"></script>
+```
+
+trước module JS.
+
+Cách xử lý:
+
+```html
+<script src="/js/common/pagination.js"></script>
+<script src="/js/assignments.js"></script>
+```
+
+---
+
+### 28.7 Lỗi HTML table render sai
+
+Ngữ cảnh:
+
+- Module `assignments`.
+
+Nguyên nhân:
+
+- Có `<div>` đặt bên trong `<table>`.
+
+Cách xử lý:
+
+- Chỉ để `thead`, `tbody`, `tfoot` trực tiếp trong `table`.
+- Pagination container đặt ngoài `table`, ví dụ trong `card-footer`.
+
+---
+
+## 29. Việc còn lại nên làm tiếp
+
+### 29.1 Test sâu các nghiệp vụ chưa test đầy đủ
+
+Cần test lại khi có dữ liệu phù hợp:
+
+```text
+Assignments:
+- Gán thiết bị mới
+- Thu hồi thiết bị
+- Thiết bị sau thu hồi có quay lại available hay không
+- Không cho gán trùng thiết bị active
+
+Repairs:
+- Tạo phiếu sửa
+- Sửa phiếu sửa
+- Xóa phiếu theo trạng thái
+- Hardware đang repair có bị khóa đúng không
+
+DeviceHardwareUnits:
+- Gán phần cứng mới
+- Sửa phần cứng đã gán
+- Detach phần cứng
+- Không cho detach/gán nếu đang repair active theo rule DB
+```
+
+### 29.2 Gom frontend helper về common
+
+Hiện nhiều module đang có helper local giống nhau:
+
+```text
+getListFromResponse
+getPaginationFromResponse
+getErrorMessage
+escapeHtml
+toggleModal
+showSuccess
+showError
+```
+
+Nên tạo dần:
+
+```text
+public/js/common/api.js
+public/js/common/dom.js
+public/js/common/alerts.js
+public/js/common/modal.js
+```
+
+Sau đó module JS chỉ gọi common helper, tránh copy/paste.
+
+### 29.3 Chuẩn hóa Base Path cho AJAX
+
+Hiện nhiều file JS gọi API bằng path tuyệt đối:
+
+```js
+'/devices/ajax'
+'/repairs/ajax'
+'/assignments/ajax'
+```
+
+Nếu deploy app dưới sub-path bằng `App_Base_Path`, các URL này có thể lỗi.
+
+Nên tạo helper:
+
+```js
+window.APP_BASE_PATH = window.APP_BASE_PATH || '';
+
+function apiUrl(path) {
+  const base = window.APP_BASE_PATH || '';
+  return `${base}${path}`;
+}
+```
+
+Và dùng:
+
+```js
+$.get(apiUrl('/repairs/ajax'), params)
+```
+
+### 29.4 Dọn route legacy sau khi test xong
+
+Các module danh mục có thể đang hỗ trợ đồng thời:
+
+```text
+PUT /:id
+PUT /:id/update
+
+DELETE /:id
+DELETE /:id/delete
+
+PATCH /:id/toggle
+PUT /:id/toggle
+```
+
+Sau khi toàn bộ frontend dùng route mới, có thể xóa route cũ để code gọn hơn.
+
+### 29.5 Chuẩn hóa Stored Procedure recordsets
+
+Nên thống nhất mọi SP phân trang trả:
+
+```text
+recordsets[0] = data
+recordsets[1] = [{ totalItems }]
+```
+
+Hiện tại một số SP trả count-first hoặc field `totalRecords`, service đang phải hỗ trợ nhiều kiểu.
+
+### 29.6 Thêm validation tập trung
+
+Hiện validation còn rải trong controller/frontend.
+
+Nên tạo:
+
+```text
+validators/
+├── assignmentValidator.js
+├── repairValidator.js
+├── deviceHardwareValidator.js
+└── commonValidator.js
+```
+
+### 29.7 Audit log / lịch sử thao tác
+
+Với hệ thống quản lý tài sản, nên cân nhắc thêm audit log cho:
+
+```text
+Create/update/delete thiết bị
+Gán/thu hồi thiết bị
+Gán/gỡ phần cứng
+Tạo/sửa/xóa phiếu sửa chữa
+```
+
+---
+
+## 30. Trạng thái hiện tại tổng quát
+
+```text
+Nền tảng dùng chung:
+✅ apiResponse
+✅ pagination helper backend
+✅ asyncHandler
+✅ errorHandler
+✅ AppPagination frontend
+
+Module danh mục:
+✅ hardware-types
+✅ hardwares
+✅ các module phase 2 đã có patch chuẩn hóa, cần test lại từng chức năng nếu chỉnh tiếp
+
+Module nghiệp vụ:
+✅ assignments hiển thị/lọc/phân trang/sửa/xóa cơ bản ổn
+⏳ assignments gán mới/thu hồi cần test sâu
+✅ repairs route/controller/service/frontend đã chuẩn hóa, route chạy ổn
+⏳ repairs create/edit/delete cần test sâu
+✅ device-hardware-units đã chuẩn hóa và tạm thời thấy ổn
+⏳ device-hardware-units create/edit/detach cần test sâu với dữ liệu thực
+
+Việc nên làm tiếp:
+1. Test sâu các nghiệp vụ chưa test.
+2. Gom frontend helper về common.
+3. Chuẩn hóa base path cho AJAX.
+4. Dọn route legacy.
+5. Chuẩn hóa Stored Procedure recordsets.
+6. Cập nhật project_context.md sau mỗi phase lớn.
+```
+
+---
+
+## 31. Ghi chú cho lần xử lý tiếp theo
+
+Khi tiếp tục dự án, AI/developer nên bắt đầu bằng checklist này:
+
+1. Mở `project_context.md` trước.
+2. Xác định module đang xử lý thuộc nhóm:
+   - danh mục
+   - nghiệp vụ assignment
+   - nghiệp vụ repair
+   - nghiệp vụ device-hardware
+3. Kiểm tra view có load đúng common script không:
+   - `/js/common/pagination.js`
+   - module JS riêng
+4. Kiểm tra route có `export default router` không.
+5. Kiểm tra route có dùng `asyncHandler` không.
+6. Kiểm tra controller có dùng `apiResponse` không.
+7. Kiểm tra frontend có đọc được response mới/cũ không.
+8. Kiểm tra endpoint dropdown có đặt trước route `/:id` không.
+9. Kiểm tra pagination:
+   - backend có `meta.pagination`
+   - frontend có `AppPagination`
+10. Nếu lỗi không hiển thị dữ liệu:
+   - xem Console
+   - xem Network response
+   - kiểm tra `getListFromResponse`
+   - kiểm tra `res.data` và legacy key
+11. Nếu lỗi server startup:
+   - kiểm tra import path có `.js`
+   - kiểm tra default export
+   - kiểm tra route file đúng tên với `index.js`
