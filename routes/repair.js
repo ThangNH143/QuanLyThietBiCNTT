@@ -1,6 +1,9 @@
-// routes/repairRoutes.js
+// routes/repair.js
+
 import express from 'express';
+
 import {
+  getRepairPage,
   getRepairsList,
   getRepairDetail,
   createRepairRecord,
@@ -11,30 +14,30 @@ import {
   getUsersForRepair
 } from '../controllers/repairController.js';
 
+import asyncHandler from '../utils/asyncHandler.js';
+
 const router = express.Router();
 
-router.get('/', (req, res) => {
-  res.render('repairs/index'); // ✅ render đúng file views/repairs/index.ejs
-});
+router.get('/', asyncHandler(getRepairPage));
 
-// 📋 Danh sách sửa chữa
-router.get('/ajax', getRepairsList);
+// Danh sách sửa chữa
+router.get('/ajax', asyncHandler(getRepairsList));
 
-// 🔍 Chi tiết sửa chữa
-router.get('/:id', getRepairDetail);
+// Dropdown hỗ trợ — phải đặt trước /:id
+router.get('/dropdown/devices', asyncHandler(getAvailableDevices));
+router.get('/dropdown/hardware-units', asyncHandler(getAvailableHardwareUnits));
+router.get('/dropdown/users', asyncHandler(getUsersForRepair));
 
-// ➕ Tạo mới
-router.post('/', createRepairRecord);
+// Chi tiết sửa chữa — đặt sau dropdown
+router.get('/:id', asyncHandler(getRepairDetail));
 
-// ✏️ Cập nhật
-router.put('/:id', updateRepairRecord);
+// Tạo mới
+router.post('/', asyncHandler(createRepairRecord));
 
-// ❌ Xóa
-router.delete('/:id', deleteRepairRecord);
+// Cập nhật
+router.put('/:id', asyncHandler(updateRepairRecord));
 
-// 🔄 Dropdown hỗ trợ
-router.get('/dropdown/devices', getAvailableDevices); // Thiết bị chưa bị sửa
-router.get('/dropdown/hardware-units', getAvailableHardwareUnits); // Phần cứng theo thiết bị
-router.get('/dropdown/users', getUsersForRepair); // Người gửi / người thực hiện
+// Xóa
+router.delete('/:id', asyncHandler(deleteRepairRecord));
 
 export default router;
