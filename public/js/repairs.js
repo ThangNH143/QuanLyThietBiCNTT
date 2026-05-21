@@ -10,6 +10,10 @@ let currentRepairParams = {
   status: 'opened'
 };
 
+let currentRepairRows = {};
+
+let surveyUsersLoaded = false;
+
 $(document).ready(function () {
   bindRepairEvents();
   loadRepairs(currentRepairParams);
@@ -60,6 +64,10 @@ function bindRepairEvents() {
   $('#btnOpenCreateRepairModal')
     .off('click')
     .on('click', openCreateRepairModal);
+
+  $('#repairReportDetailForm')
+    .off('submit')
+    .on('submit', submitRepairReportDetail);
 }
 
 function getListFromResponse(res, legacyKey) {
@@ -564,6 +572,7 @@ function loadRepairs(params = {}) {
 function renderRepairTable(repairs, pagination) {
   const tbody = $('#repairTableBody');
   tbody.empty();
+  currentRepairRows = {};
 
   if (!Array.isArray(repairs) || repairs.length === 0) {
     tbody.append(`
@@ -577,6 +586,7 @@ function renderRepairTable(repairs, pagination) {
   }
 
   repairs.forEach((r) => {
+    currentRepairRows[String(r.id)] = r;
     const canDelete = r.status === 'opened';
 
     const row = `
@@ -592,6 +602,30 @@ function renderRepairTable(repairs, pagination) {
         <td>${renderStatus(r.status)}</td>
         <td>${escapeHtml(r.note || '')}</td>
         <td class="text-nowrap">
+          <button
+            class="btn btn-sm btn-outline-info me-1"
+            onclick="openRepairReportDetailModal(${r.id})"
+            title="Thông tin biểu mẫu"
+          >
+            📝
+          </button>
+
+          <button
+            class="btn btn-sm btn-outline-dark me-1"
+            onclick="openRepairRequestPdf(${r.id})"
+            title="Phiếu đề nghị sửa chữa"
+          >
+            📄
+          </button>
+
+          <button
+            class="btn btn-sm btn-outline-secondary me-1"
+            onclick="openRepairInspectionPdf(${r.id})"
+            title="Biên bản kiểm tra thiết bị"
+          >
+            📋
+          </button>
+
           <button
             class="btn btn-sm btn-warning me-1"
             onclick="openEditRepairModal(${r.id})"
@@ -743,4 +777,170 @@ function submitEditRepair(e) {
     .fail((xhr) => {
       showError(getErrorMessage(xhr, 'Không thể cập nhật phiếu sửa chữa'));
     });
+}
+
+async function openRepairReportDetailModal(repairId) {
+  if (!repairId) {
+    showError('Không xác định được phiếu sửa chữa');
+    return;
+  }
+
+  $('#repairReportDetailForm')[0].reset();
+  $('#reportRepairId').val(repairId);
+
+  try {
+    await loadSurveyUsersForReport();
+
+    const res = await $.get(`/repairs/${repairId}/report-detail`);
+    const data = res.data || {};
+
+    fillRepairReportDetailForm(data);
+
+    const modalEl = document.querySelector('#repairReportDetailModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+  } catch (xhr) {
+    showError(getErrorMessage(xhr, 'Không thể tải thông tin biểu mẫu'));
+  }
+}
+
+function fillRepairReportDetailForm(data = {}) {
+  $('#reportDeviceUseDate').val(formatDateInput(data.deviceUseDate));
+
+  $('#reportDamageDescription').val(data.damageDescription || '');
+  $('#reportSurveyResult').val(data.surveyResult || '');
+
+  $('#reportSurveyPerson1Name').val(data.surveyPerson1Name || '');
+  $('#reportSurveyPerson1Date').val(formatDateInput(data.surveyPerson1Date));
+
+  $('#reportSurveyPerson2Name').val(data.surveyPerson2Name || '');
+  $('#reportSurveyPerson2Date').val(formatDateInput(data.surveyPerson2Date));
+
+  $('#reportSurveyPerson3Name').val(data.surveyPerson3Name || '');
+  $('#reportSurveyPerson3Date').val(formatDateInput(data.surveyPerson3Date));
+
+  $('#reportRepairMethod').val(data.repairMethod || '');
+
+  $('#reportExpectedRepairHours').val(data.expectedRepairHours ?? '');
+  $('#reportExpectedStartTime').val(data.expectedStartTime || '');
+  $('#reportExpectedEndTime').val(data.expectedEndTime || '');
+
+  $('#reportEstimatedCost').val(data.estimatedCost ?? '');
+
+  $('#reportActualRepairHours').val(data.actualRepairHours ?? '');
+  $('#reportActualStartTime').val(data.actualStartTime || '');
+  $('#reportActualEndTime').val(data.actualEndTime || '');
+
+  $('#reportRepairResult').val(data.repairResult || '');
+  $('#reportRepairResultOther').val(data.repairResultOther || '');
+
+  $('#reportRepairContent').val(data.repairContent || '');
+
+  $('#reportOperationStatus').val(data.operationStatus || '');
+  $('#reportAcceptanceResult').val(data.acceptanceResult || '');
+  $('#reportAcceptanceNote').val(data.acceptanceNote || '');
+
+  $('#reportDepartmentRepresentativeName').val(data.departmentRepresentativeName || '');
+  $('#reportFinanceDeptHeadName').val(data.financeDeptHeadName || '');
+  $('#reportAdminDeptHeadName').val(data.adminDeptHeadName || '');
+  $('#reportDirectorName').val(data.directorName || '');
+  $('#reportRepairTechnicianName').val(data.repairTechnicianName || '');
+  $('#reportItRepresentativeName').val(data.itRepresentativeName || '');
+}
+
+function submitRepairReportDetail(e) {
+  e.preventDefault();
+
+  const repairId = $('#reportRepairId').val();
+
+  if (!repairId) {
+    showError('Không xác định được phiếu sửa chữa');
+    return;
+  }
+
+  const payload = Object.fromEntries(new FormData(this));
+
+  $.post(`/repairs/${repairId}/report-detail`, payload)
+    .done((res) => {
+      showSuccess(res.message || 'Đã lưu thông tin biểu mẫu sửa chữa');
+
+      const modalEl = document.querySelector('#repairReportDetailModal');
+      const modal = bootstrap.Modal.getInstance(modalEl);
+
+      if (modal) {
+        modal.hide();
+      }
+    })
+    .fail((xhr) => {
+      showError(getErrorMessage(xhr, 'Không thể lưu thông tin biểu mẫu'));
+    });
+}
+
+function formatDateInput(value) {
+  if (!value) return '';
+
+  const str = String(value);
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    return str.slice(0, 10);
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function loadSurveyUsersForReport() {
+  if (surveyUsersLoaded) return Promise.resolve();
+
+  return $.get('/repairs/report-detail/survey-users', { deptId: 295 })
+    .done((res) => {
+      const users = getListFromResponse(res, 'users');
+      const datalist = $('#reportSurveyUserList');
+
+      datalist.empty();
+
+      users.forEach((user) => {
+        const label = user.code
+          ? `${user.name} - ${user.code}`
+          : user.name;
+
+        datalist.append(`
+          <option value="${escapeHtml(user.name || '')}">
+            ${escapeHtml(label || '')}
+          </option>
+        `);
+      });
+
+      surveyUsersLoaded = true;
+    })
+    .fail((xhr) => {
+      console.warn('Không tải được danh sách nhân viên khảo sát:', xhr);
+    });
+}
+
+function openRepairRequestPdf(id) {
+  if (!id) {
+    showError('Không xác định được phiếu sửa chữa');
+    return;
+  }
+
+  window.open(`/repairs/${id}/reports/request/pdf`, '_blank');
+}
+
+function openRepairInspectionPdf(id) {
+  if (!id) {
+    showError('Không xác định được phiếu sửa chữa');
+    return;
+  }
+
+  window.open(`/repairs/${id}/reports/inspection/pdf`, '_blank');
 }

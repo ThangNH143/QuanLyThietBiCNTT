@@ -157,6 +157,217 @@
   </div>
 </div>
 
+<!-- Modal thông tin biểu mẫu sửa chữa -->
+<div class="modal fade" id="repairReportDetailModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <form id="repairReportDetailForm" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Thông tin biểu mẫu sửa chữa</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <input type="hidden" id="reportRepairId" />
+        <datalist id="reportSurveyUserList"></datalist>
+
+        <div class="alert alert-info small">
+          Dữ liệu này dùng để in <strong>Phiếu đề nghị sửa chữa</strong> và
+          <strong>Biên bản kiểm tra thiết bị</strong>.
+          Trong Biên bản kiểm tra:
+          <br />
+          - “Kết quả kiểm tra” lấy từ “Mô tả tình trạng hư hỏng”.
+          <br />
+          - “Hướng khắc phục” lấy từ “Nội dung sửa chữa cụ thể”.
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Ngày đưa vào sử dụng</label>
+            <input type="date" name="deviceUseDate" id="reportDeviceUseDate" class="form-control" />
+          </div>
+
+          <div class="col-md-8">
+            <label class="form-label">Mô tả tình trạng hư hỏng</label>
+            <textarea name="damageDescription" id="reportDamageDescription" class="form-control" rows="2"></textarea>
+          </div>
+
+          <div class="col-12">
+            <label class="form-label">Kết quả khảo sát</label>
+            <textarea name="surveyResult" id="reportSurveyResult" class="form-control" rows="2"></textarea>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Người khảo sát 1</label>
+            <input
+              name="surveyPerson1Name"
+              id="reportSurveyPerson1Name"
+              class="form-control"
+              list="reportSurveyUserList"
+            />
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Ngày khảo sát 1</label>
+            <input type="date" name="surveyPerson1Date" id="reportSurveyPerson1Date" class="form-control" />
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Người khảo sát 2</label>
+            <input
+              name="surveyPerson2Name"
+              id="reportSurveyPerson2Name"
+              class="form-control"
+              list="reportSurveyUserList"
+            />
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Ngày khảo sát 2</label>
+            <input type="date" name="surveyPerson2Date" id="reportSurveyPerson2Date" class="form-control" />
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Người khảo sát 3</label>
+            <input
+              name="surveyPerson3Name"
+              id="reportSurveyPerson3Name"
+              class="form-control"
+              list="reportSurveyUserList"
+            />
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Ngày khảo sát 3</label>
+            <input type="date" name="surveyPerson3Date" id="reportSurveyPerson3Date" class="form-control" />
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Hình thức sửa chữa</label>
+            <select name="repairMethod" id="reportRepairMethod" class="form-select">
+              <option value="">-- Chọn --</option>
+              <option value="internal">Nội bộ</option>
+              <option value="external">Thuê ngoài</option>
+            </select>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Thời gian dự kiến (giờ)</label>
+            <input type="number" step="0.5" name="expectedRepairHours" id="reportExpectedRepairHours" class="form-control" />
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Dự kiến từ lúc</label>
+            <input name="expectedStartTime" id="reportExpectedStartTime" class="form-control" placeholder="Ví dụ: 08:00" />
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Dự kiến đến lúc</label>
+            <input name="expectedEndTime" id="reportExpectedEndTime" class="form-control" placeholder="Ví dụ: 10:00" />
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Chi phí dự kiến</label>
+            <input type="number" name="estimatedCost" id="reportEstimatedCost" class="form-control" />
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Thời gian thực tế (giờ)</label>
+            <input type="number" step="0.5" name="actualRepairHours" id="reportActualRepairHours" class="form-control" />
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Thực tế từ lúc</label>
+            <input name="actualStartTime" id="reportActualStartTime" class="form-control" placeholder="Ví dụ: 08:00" />
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Thực tế đến lúc</label>
+            <input name="actualEndTime" id="reportActualEndTime" class="form-control" placeholder="Ví dụ: 10:00" />
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Kết quả sửa chữa</label>
+            <select name="repairResult" id="reportRepairResult" class="form-select">
+              <option value="">-- Chọn --</option>
+              <option value="passed">Đạt</option>
+              <option value="failed">Không đạt</option>
+              <option value="other">Khác</option>
+            </select>
+          </div>
+
+          <div class="col-md-9">
+            <label class="form-label">Kết quả khác</label>
+            <input name="repairResultOther" id="reportRepairResultOther" class="form-control" />
+          </div>
+
+          <div class="col-12">
+            <label class="form-label">Nội dung sửa chữa cụ thể</label>
+            <textarea name="repairContent" id="reportRepairContent" class="form-control" rows="2"></textarea>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Tình trạng hoạt động</label>
+            <select name="operationStatus" id="reportOperationStatus" class="form-select">
+              <option value="">-- Chọn --</option>
+              <option value="passed">Đạt</option>
+              <option value="failed">Không đạt</option>
+            </select>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Kết quả nghiệm thu</label>
+            <select name="acceptanceResult" id="reportAcceptanceResult" class="form-select">
+              <option value="">-- Chọn --</option>
+              <option value="passed">Đạt</option>
+              <option value="failed">Không đạt</option>
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Ghi chú nghiệm thu</label>
+            <input name="acceptanceNote" id="reportAcceptanceNote" class="form-control" />
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Đại diện khoa/phòng sử dụng</label>
+            <input name="departmentRepresentativeName" id="reportDepartmentRepresentativeName" class="form-control" />
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">TP.TC-KT</label>
+            <input name="financeDeptHeadName" id="reportFinanceDeptHeadName" class="form-control" />
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">TP.HCQT-TCCB</label>
+            <input name="adminDeptHeadName" id="reportAdminDeptHeadName" class="form-control" />
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Giám đốc</label>
+            <input name="directorName" id="reportDirectorName" class="form-control" />
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Người thực hiện sửa chữa</label>
+            <input name="repairTechnicianName" id="reportRepairTechnicianName" class="form-control" />
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Đại diện phòng CNTT</label>
+            <input name="itRepresentativeName" id="reportItRepresentativeName" class="form-control" />
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-primary">💾 Lưu thông tin biểu mẫu</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script src="/js/common/pagination.js"></script>
 <script src="/js/repairs.js"></script>
 </body>

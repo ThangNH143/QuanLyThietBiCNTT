@@ -14,6 +14,17 @@ import {
   getUsersForRepair
 } from '../controllers/repairController.js';
 
+import {
+  getRepairReportDetail,
+  saveRepairReportDetail,
+  getSurveyUsers
+} from '../controllers/repairReportController.js';
+
+import {
+  printRepairRequestPdf,
+  printRepairInspectionPdf
+} from '../controllers/repairPrintController.js';
+
 import asyncHandler from '../utils/asyncHandler.js';
 
 const router = express.Router();
@@ -27,6 +38,17 @@ router.get('/ajax', asyncHandler(getRepairsList));
 router.get('/dropdown/devices', asyncHandler(getAvailableDevices));
 router.get('/dropdown/hardware-units', asyncHandler(getAvailableHardwareUnits));
 router.get('/dropdown/users', asyncHandler(getUsersForRepair));
+
+//route in report detail
+router.get('/report-detail/survey-users', asyncHandler(getSurveyUsers));
+
+//route in report
+router.get('/:id/report-detail', asyncHandler(getRepairReportDetail));
+router.post('/:id/report-detail', asyncHandler(saveRepairReportDetail));
+
+//report pdf
+router.get('/:id/reports/request/pdf', asyncHandler(printRepairRequestPdf));
+router.get('/:id/reports/inspection/pdf', asyncHandler(printRepairInspectionPdf));
 
 // Chi tiết sửa chữa — đặt sau dropdown
 router.get('/:id', asyncHandler(getRepairDetail));
