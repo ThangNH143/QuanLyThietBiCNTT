@@ -85,12 +85,18 @@ function buildRepairTemplateData(row) {
   const operationStatus = row.operationStatus || '';
   const acceptanceResult = row.acceptanceResult || '';
 
+  const deviceType = clean(row.deviceType);
+  const deviceNameOnly = clean(row.deviceName);
+  const displayDeviceName = [deviceType, deviceNameOnly]
+    .filter(Boolean)
+    .join(' ');
+
   return {
     repairId: row.repairId || '',
 
     deviceCode: clean(row.deviceCode),
-    deviceName: clean(row.deviceName),
-    deviceType: clean(row.deviceType),
+    deviceName: displayDeviceName,
+    deviceType,
     serialNumber: clean(row.serialNumber),
     hardwareName: clean(row.hardwareName),
     deptName: clean(row.deptName),
