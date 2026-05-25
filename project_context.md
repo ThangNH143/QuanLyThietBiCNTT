@@ -2523,3 +2523,1193 @@ Khi tiếp tục dự án, AI/developer nên bắt đầu bằng checklist này:
    - kiểm tra import path có `.js`
    - kiểm tra default export
    - kiểm tra route file đúng tên với `index.js`
+
+
+---
+
+## 32. CẬP NHẬT MODULE REPAIRS REPORT — DOCX TEMPLATE → PDF PREVIEW/PRINT
+
+Phần này ghi lại toàn bộ các xử lý mới nhất liên quan tới **báo cáo/in biểu mẫu cho module `repairs`**.
+
+Mục tiêu đã thống nhất:
+
+```text
+Không in HTML/EJS trực tiếp vì trình duyệt có thể tự thêm header/footer/URL.
+Không dùng PDFKit thủ công vì khó sửa mẫu hành chính.
+Sử dụng Word DOCX template để dễ chỉnh mẫu.
+Backend đổ dữ liệu vào DOCX.
+LibreOffice convert DOCX → PDF.
+Browser mở PDF để xem trước và in.
+```
+
+Hai mẫu in của module sửa chữa:
+
+```text
+1. Phiếu đề nghị sửa chữa thiết bị công nghệ thông tin
+2. Biên bản kiểm tra tình trạng hư hỏng của trang thiết bị công nghệ thông tin
+```
+
+Quy ước mapping quan trọng đã chốt:
+
+```text
+Biên bản kiểm tra - Kết quả kiểm tra
+= Phiếu đề nghị - Mô tả tình trạng hư hỏng
+= RepairReportDetails.damageDescription
+
+Biên bản kiểm tra - Hướng khắc phục
+= Phiếu đề nghị - Nội dung sửa chữa cụ thể
+= RepairReportDetails.repairContent
+```
+
+---
+
+## 33. Database bổ sung cho Repairs Report
+
+### 33.1 Bảng mới: `RepairReportDetails`
+
+Đã tạo bảng riêng để lưu dữ liệu biểu mẫu, không nhồi thêm nhiều cột vào bảng `Repairs`.
+
+Quan hệ:
+
+```text
+Repairs 1 ─── 0/1 RepairReportDetails
+```
+
+Khóa ngoại:
+
+```text
+RepairReportDetails.repairId → Repairs.id
+```
+
+Các trường lưu trong bảng này chỉ phục vụ đúng nội dung 2 mẫu in, không thêm dữ liệu ngoài mẫu.
+
+Nhóm dữ liệu chính:
+
+```text
+deviceUseDate
+
+damageDescription
+
+surveyResult
+surveyPerson1Name
+surveyPerson1Date
+surveyPerson2Name
+surveyPerson2Date
+surveyPerson3Name
+surveyPerson3Date
+
+repairMethod
+
+expectedRepairHours
+expectedStartTime
+expectedEndTime
+estimatedCost
+
+actualRepairHours
+actualStartTime
+actualEndTime
+
+repairResult
+repairResultOther
+repairContent
+
+operationStatus
+acceptanceResult
+acceptanceNote
+
+departmentRepresentativeName
+financeDeptHeadName
+adminDeptHeadName
+directorName
+repairTechnicianName
+itRepresentativeName
+```
+
+### 33.2 Stored Procedure đã thêm
+
+Đã tạo các Stored Procedure sau:
+
+```text
+sp_RepairReportDetails_GetByRepairId
+sp_RepairReportDetails_Upsert
+sp_Repairs_GetPrintDataById
+sp_RepairReportDetails_GetDefaultDeviceUseDate
+sp_RepairReportDetails_GetSurveyUsers
+```
+
+#### `sp_RepairReportDetails_GetByRepairId`
+
+Dùng để load dữ liệu biểu mẫu khi mở modal “Thông tin biểu mẫu sửa chữa”.
+
+Endpoint sử dụng:
+
+```text
+GET /repairs/:id/report-detail
+```
+
+#### `sp_RepairReportDetails_Upsert`
+
+Dùng để lưu dữ liệu biểu mẫu.
+
+Endpoint sử dụng:
+
+```text
+POST /repairs/:id/report-detail
+```
+
+Nếu đã có dữ liệu report thì update, chưa có thì insert.
+
+#### `sp_Repairs_GetPrintDataById`
+
+Dùng để lấy dữ liệu đầy đủ khi render DOCX/PDF.
+
+SP này join dữ liệu từ:
+
+```text
+Repairs
+Devices
+DeviceTypes
+Departments
+HardwareUnits
+Hardwares
+Users
+RepairReportDetails
+```
+
+SP này phải trả đủ dữ liệu cho template Word, bao gồm cả dữ liệu nghiệp vụ và dữ liệu biểu mẫu.
+
+#### `sp_RepairReportDetails_GetDefaultDeviceUseDate`
+
+Dùng để lấy mặc định `deviceUseDate` theo ngày bắt đầu sử dụng của thiết bị trong module **Thiết bị - Nơi sử dụng**.
+
+Rule đã thống nhất:
+
+```text
+Ưu tiên assignment đang active: endDate IS NULL.
+Nếu không có active assignment thì lấy assignment gần nhất theo startDate DESC.
+```
+
+#### `sp_RepairReportDetails_GetSurveyUsers`
+
+Dùng để lấy danh sách gợi ý “Người khảo sát” từ DM Users.
+
+Rule đã thống nhất:
+
+```text
+Lấy Users có deptId = 295.
+Vẫn cho phép nhập tên khác ngoài danh sách.
+```
+
+---
+
+## 34. Backend bổ sung cho Repairs Report
+
+### 34.1 File mới: `services/repairReportService.js`
+
+Dùng cho phần lưu/lấy dữ liệu biểu mẫu.
+
+Các function chính:
+
+```js
+getRepairReportDetailByRepairId(repairId)
+upsertRepairReportDetail(repairId, data)
+getDefaultDeviceUseDateByRepairId(repairId)
+getSurveyUsersByDeptId(deptId = 295)
+```
+
+Ghi chú:
+
+- `normalizeDate()` dùng để convert input date từ form.
+- `normalizeDecimal()` dùng để xử lý số tiền/giờ.
+- Các field rỗng được truyền `null` xuống SQL.
+
+### 34.2 File mới: `controllers/repairReportController.js`
+
+Các controller chính:
+
+```js
+getRepairReportDetail(req, res)
+saveRepairReportDetail(req, res)
+getSurveyUsers(req, res)
+```
+
+Endpoint:
+
+```text
+GET  /repairs/:id/report-detail
+POST /repairs/:id/report-detail
+GET  /repairs/report-detail/survey-users?deptId=295
+```
+
+Quy tắc `getRepairReportDetail`:
+
+```text
+Nếu RepairReportDetails đã có deviceUseDate → dùng giá trị đã lưu.
+Nếu chưa có deviceUseDate → lấy mặc định từ sp_RepairReportDetails_GetDefaultDeviceUseDate.
+```
+
+### 34.3 File mới: `services/docxReportService.js`
+
+Dùng để render DOCX template rồi convert sang PDF bằng LibreOffice CLI.
+
+File này đã chuyển từ cách dùng `libreoffice-convert` sang gọi trực tiếp `soffice.exe` bằng `child_process.execFile`.
+
+Lý do:
+
+```text
+libreoffice-convert có thể báo lỗi "Could not find soffice binary" trên Windows.
+Dùng trực tiếp đường dẫn soffice.exe ổn định hơn.
+```
+
+File này xử lý:
+
+```text
+1. Đọc DOCX template.
+2. Render bằng docxtemplater + pizzip.
+3. Ghi file DOCX tạm vào temp/reports.
+4. Gọi LibreOffice headless convert sang PDF.
+5. Đọc PDF buffer trả về controller.
+```
+
+Cấu hình `docxtemplater` quan trọng:
+
+```js
+const doc = new Docxtemplater(zip, {
+  paragraphLoop: true,
+  linebreaks: true,
+  delimiters: {
+    start: '{{',
+    end: '}}'
+  }
+});
+```
+
+Lý do:
+
+```text
+Template Word đang dùng placeholder dạng {{deviceName}}.
+Docxtemplater mặc định dùng {deviceName}.
+Nếu không set delimiters sẽ báo lỗi duplicate_open_tag / duplicate_close_tag.
+```
+
+### 34.4 File mới: `services/repairPrintService.js`
+
+Dùng để lấy dữ liệu in và gọi render PDF.
+
+Các function chính:
+
+```js
+getRepairPrintData(repairId)
+generateRepairRequestPdf(repairId)
+generateRepairInspectionPdf(repairId)
+```
+
+Template path:
+
+```text
+templates/repairs/repair-request-template.docx
+templates/repairs/repair-inspection-template.docx
+```
+
+Output tạm:
+
+```text
+temp/reports/
+```
+
+Function `buildRepairTemplateData(row)` chịu trách nhiệm mapping dữ liệu từ DB sang placeholder của Word.
+
+Quy tắc hiển thị tên thiết bị đã điều chỉnh:
+
+```text
+{{deviceName}} = Loại thiết bị + Tên thiết bị
+```
+
+Ví dụ:
+
+```text
+deviceType = Máy tính
+deviceName = CAP01
+→ template nhận deviceName = Máy tính CAP01
+```
+
+Mục tiêu là trong cả 2 mẫu in, phần “Tên thiết bị/Tên trang thiết bị” dễ hiểu hơn.
+
+### 34.5 File mới: `controllers/repairPrintController.js`
+
+Các controller chính:
+
+```js
+printRepairRequestPdf(req, res)
+printRepairInspectionPdf(req, res)
+```
+
+Endpoint:
+
+```text
+GET /repairs/:id/reports/request/pdf
+GET /repairs/:id/reports/inspection/pdf
+```
+
+Response:
+
+```text
+Content-Type: application/pdf
+Content-Disposition: inline
+```
+
+Nghĩa là trình duyệt mở PDF để xem trước/in, không tự tải về bắt buộc.
+
+---
+
+## 35. Route bổ sung trong `routes/repair.js`
+
+Các import mới đã thêm:
+
+```js
+import {
+  getRepairReportDetail,
+  saveRepairReportDetail,
+  getSurveyUsers
+} from '../controllers/repairReportController.js';
+
+import {
+  printRepairRequestPdf,
+  printRepairInspectionPdf
+} from '../controllers/repairPrintController.js';
+```
+
+Các route mới phải đặt trước route `/:id`:
+
+```js
+router.get('/report-detail/survey-users', asyncHandler(getSurveyUsers));
+
+router.get('/:id/report-detail', asyncHandler(getRepairReportDetail));
+router.post('/:id/report-detail', asyncHandler(saveRepairReportDetail));
+
+router.get('/:id/reports/request/pdf', asyncHandler(printRepairRequestPdf));
+router.get('/:id/reports/inspection/pdf', asyncHandler(printRepairInspectionPdf));
+
+router.get('/:id', asyncHandler(getRepairDetail));
+```
+
+Lưu ý rất quan trọng:
+
+```text
+Mọi route cụ thể như /report-detail/survey-users, /:id/report-detail, /:id/reports/... phải đặt trước /:id.
+Nếu đặt sau /:id, Express sẽ match nhầm và gây lỗi detail.
+```
+
+---
+
+## 36. Frontend cập nhật cho `views/repairs/index.ejs`
+
+Đã thêm modal:
+
+```text
+#repairReportDetailModal
+```
+
+Form:
+
+```text
+#repairReportDetailForm
+```
+
+Hidden input:
+
+```text
+#reportRepairId
+```
+
+Datalist người khảo sát:
+
+```html
+<datalist id="reportSurveyUserList"></datalist>
+```
+
+Các trường chính trong modal:
+
+```text
+reportDeviceUseDate
+reportDamageDescription
+reportSurveyResult
+reportSurveyPerson1Name
+reportSurveyPerson1Date
+reportSurveyPerson2Name
+reportSurveyPerson2Date
+reportSurveyPerson3Name
+reportSurveyPerson3Date
+
+reportRepairMethod
+reportExpectedRepairHours
+reportExpectedStartTime
+reportExpectedEndTime
+reportEstimatedCost
+
+reportActualRepairHours
+reportActualStartTime
+reportActualEndTime
+
+reportRepairResult
+reportRepairResultOther
+reportRepairContent
+
+reportOperationStatus
+reportAcceptanceResult
+reportAcceptanceNote
+
+reportDepartmentRepresentativeName
+reportFinanceDeptHeadName
+reportAdminDeptHeadName
+reportDirectorName
+reportRepairTechnicianName
+reportItRepresentativeName
+```
+
+Ghi chú UX:
+
+```text
+Người khảo sát 1/2/3 dùng input + datalist.
+Datalist gợi ý nhân viên Users deptId = 295.
+User vẫn nhập tay tên khác được.
+```
+
+---
+
+## 37. Frontend cập nhật cho `public/js/repairs.js`
+
+### 37.1 State mới
+
+Đã thêm:
+
+```js
+let currentRepairRows = {};
+let surveyUsersLoaded = false;
+```
+
+`currentRepairRows` dùng để giữ dữ liệu dòng hiện tại nếu cần thao tác theo dòng.
+
+### 37.2 Event mới
+
+Trong `bindRepairEvents()` đã thêm:
+
+```js
+$('#repairReportDetailForm')
+  .off('submit')
+  .on('submit', submitRepairReportDetail);
+```
+
+### 37.3 Nút mới ở cột thao tác
+
+Cột thao tác của từng phiếu sửa chữa hiện nên có các nút:
+
+```text
+📝 Thông tin biểu mẫu
+📄 Phiếu đề nghị sửa chữa
+📋 Biên bản kiểm tra thiết bị
+✏️ Sửa
+❌ Xóa
+```
+
+Các function liên quan:
+
+```js
+openRepairReportDetailModal(id)
+openRepairRequestPdf(id)
+openRepairInspectionPdf(id)
+```
+
+### 37.4 Function report detail
+
+Đã thêm các function:
+
+```js
+loadSurveyUsersForReport()
+openRepairReportDetailModal(repairId)
+fillRepairReportDetailForm(data)
+submitRepairReportDetail(e)
+formatDateInput(value)
+```
+
+Quy trình mở modal:
+
+```text
+1. Reset form.
+2. Set reportRepairId.
+3. Load survey users nếu chưa load.
+4. GET /repairs/:id/report-detail.
+5. Fill form.
+6. Mở modal.
+```
+
+Quy trình lưu:
+
+```text
+1. Lấy payload từ FormData.
+2. POST /repairs/:id/report-detail.
+3. Hiển thị thông báo thành công.
+4. Đóng modal.
+```
+
+### 37.5 Function mở PDF
+
+Đã thêm:
+
+```js
+function openRepairRequestPdf(id) {
+  window.open(`/repairs/${id}/reports/request/pdf`, '_blank');
+}
+
+function openRepairInspectionPdf(id) {
+  window.open(`/repairs/${id}/reports/inspection/pdf`, '_blank');
+}
+```
+
+Nếu sau này chuẩn hóa base path, cần đổi sang:
+
+```js
+window.open(apiUrl(`/repairs/${id}/reports/request/pdf`), '_blank');
+```
+
+---
+
+## 38. DOCX Template
+
+### 38.1 Thư mục template
+
+Đã thống nhất thư mục:
+
+```text
+templates/
+└── repairs/
+    ├── repair-request-template.docx
+    └── repair-inspection-template.docx
+```
+
+File `.doc` cũ phải được convert/sửa thành `.docx` hợp lệ. Không dùng `.doc` trực tiếp với `docxtemplater`.
+
+### 38.2 Placeholder chuẩn
+
+Tất cả placeholder dùng dạng double braces:
+
+```text
+{{deviceName}}
+{{deviceCode}}
+{{deptName}}
+{{damageDescription}}
+```
+
+Vì vậy `docxReportService.js` bắt buộc phải có config:
+
+```js
+delimiters: {
+  start: '{{',
+  end: '}}'
+}
+```
+
+### 38.3 Placeholder cho Phiếu đề nghị sửa chữa
+
+Các placeholder quan trọng:
+
+```text
+{{deviceName}}
+{{deviceCode}}
+{{deviceUseDate}}
+{{deptName}}
+
+{{damageDescription}}
+
+{{surveyResult}}
+{{surveyPerson1Name}}
+{{surveyPerson1Date}}
+{{surveyPerson2Name}}
+{{surveyPerson2Date}}
+{{surveyPerson3Name}}
+{{surveyPerson3Date}}
+
+{{repairMethodInternalChecked}}
+{{repairMethodExternalChecked}}
+
+{{expectedRepairHours}}
+{{expectedStartTime}}
+{{expectedEndTime}}
+{{estimatedCost}}
+
+{{actualRepairHours}}
+{{actualStartTime}}
+{{actualEndTime}}
+
+{{repairResultPassedChecked}}
+{{repairResultFailedChecked}}
+{{repairResultOther}}
+
+{{repairContent}}
+
+{{operationPassedChecked}}
+{{operationFailedChecked}}
+
+{{acceptancePassedChecked}}
+{{acceptanceFailedChecked}}
+
+{{acceptanceNote}}
+
+{{departmentRepresentativeName}}
+{{financeDeptHeadName}}
+{{adminDeptHeadName}}
+{{directorName}}
+{{repairTechnicianName}}
+{{itRepresentativeName}}
+
+{{reportDay}}
+{{reportMonth}}
+{{reportYear}}
+```
+
+### 38.4 Placeholder cho Biên bản kiểm tra thiết bị
+
+Các placeholder quan trọng:
+
+```text
+{{deviceName}}
+{{deptName}}
+{{inspectionResult}}
+{{repairSuggestion}}
+
+{{reportDay}}
+{{reportMonth}}
+{{reportYear}}
+
+{{surveyPerson1Name}}
+{{departmentRepresentativeName}}
+{{itRepresentativeName}}
+```
+
+Mapping:
+
+```js
+inspectionResult = damageDescription
+repairSuggestion = repairContent
+```
+
+### 38.5 Lỗi template đã gặp
+
+Lỗi:
+
+```text
+The filetype for this file could not be identified, is this file corrupted ? Empty zip file
+```
+
+Nguyên nhân:
+
+```text
+File .docx không hợp lệ, rỗng, hoặc chỉ là file .doc đổi đuôi.
+```
+
+Cách xử lý:
+
+```text
+Tạo lại template DOCX hợp lệ bằng Word hoặc python-docx.
+Không rename .doc thành .docx.
+```
+
+Lỗi:
+
+```text
+Multi error
+duplicate_open_tag
+duplicate_close_tag
+```
+
+Nguyên nhân:
+
+```text
+Template dùng {{...}} nhưng docxtemplater mặc định hiểu {...}.
+```
+
+Cách xử lý:
+
+```js
+delimiters: {
+  start: '{{',
+  end: '}}'
+}
+```
+
+---
+
+## 39. LibreOffice trên môi trường chạy Node.js
+
+### 39.1 Nguyên tắc
+
+Máy nào chạy Node.js server thì máy đó phải cài LibreOffice.
+
+Ví dụ:
+
+```text
+Code ở máy local → Node chạy local → LibreOffice phải cài ở máy local.
+Deploy lên server thật → Node chạy server → LibreOffice phải cài ở server.
+```
+
+Không cần cài LibreOffice trên máy client chỉ mở trình duyệt.
+
+### 39.2 Kiểm tra LibreOffice
+
+Trên máy chạy Node server:
+
+```cmd
+where soffice
+```
+
+Kết quả mong muốn:
+
+```text
+C:\Program Files\LibreOffice\program\soffice.com
+C:\Program Files\LibreOffice\program\soffice.exe
+```
+
+Kiểm tra version:
+
+```cmd
+"C:\Program Files\LibreOffice\program\soffice.exe" --version
+```
+
+### 39.3 Biến môi trường
+
+Nên cấu hình trong `.env`:
+
+```env
+LIBREOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
+```
+
+Trong code:
+
+```js
+const sofficePath = process.env.LIBREOFFICE_PATH || DEFAULT_SOFFICE_PATH;
+```
+
+### 39.4 Lỗi đã gặp
+
+Lỗi:
+
+```text
+Could not find soffice binary
+```
+
+Nguyên nhân phổ biến:
+
+```text
+1. Máy đang chạy Node.js chưa cài LibreOffice.
+2. LibreOffice đã cài nhưng Node không thấy PATH.
+3. Server đang chạy code cũ còn dùng libreoffice-convert.
+4. Sửa file ở máy code nhưng Node thật chạy ở máy khác/thư mục khác.
+```
+
+Cách xử lý đã áp dụng:
+
+```text
+1. Cài LibreOffice trên đúng máy chạy Node.
+2. Chuyển docxReportService sang gọi trực tiếp soffice.exe bằng execFile.
+3. Thêm LIBREOFFICE_PATH vào .env.
+4. Restart terminal/VS Code/server sau khi cài hoặc sửa PATH.
+```
+
+Dấu hiệu chạy đúng code mới:
+
+```text
+Terminal có log [REPORT] LibreOffice path: ...
+Terminal có log [REPORT] DOCX input: ...
+Terminal có log [REPORT] PDF output dir: ...
+```
+
+---
+
+## 40. Xóa phiếu sửa chữa khi có RepairReportDetails
+
+Sau khi thêm bảng `RepairReportDetails`, khi xóa phiếu `Repairs` có dữ liệu report liên quan có thể bị lỗi khóa ngoại.
+
+Nguyên nhân:
+
+```text
+RepairReportDetails.repairId FK tới Repairs.id.
+Nếu xóa Repairs trước, SQL Server không cho xóa vì còn record con.
+```
+
+Cách xử lý đã thống nhất:
+
+```text
+Sửa Stored Procedure sp_Repairs_Delete để xóa RepairReportDetails trước, sau đó xóa Repairs.
+```
+
+Không khuyến khích dùng `ON DELETE CASCADE` ngay vì hệ thống quản lý tài sản cần xóa rõ ràng, dễ kiểm soát.
+
+Logic SP đề xuất:
+
+```sql
+BEGIN TRANSACTION;
+
+DELETE FROM dbo.RepairReportDetails
+WHERE repairId = @pId;
+
+DELETE FROM dbo.Repairs
+WHERE id = @pId;
+
+COMMIT TRANSACTION;
+```
+
+Nếu có rule chỉ cho xóa phiếu ở trạng thái `opened`, rule này vẫn giữ trước khi delete.
+
+Trạng thái hiện tại:
+
+```text
+✅ Đã phát hiện lỗi.
+✅ Đã sửa SP delete theo hướng xóa RepairReportDetails trước.
+✅ Người dùng test lại đã ổn.
+```
+
+---
+
+## 41. Trạng thái hiện tại của Repairs Report
+
+```text
+✅ Đã tạo bảng RepairReportDetails.
+✅ Đã tạo Stored Procedure Get/Upsert/PrintData/DefaultDeviceUseDate/SurveyUsers.
+✅ Đã thêm service/controller/route để GET/POST report detail.
+✅ Đã thêm modal nhập thông tin biểu mẫu trên màn hình repairs.
+✅ Đã tự động lấy ngày đưa vào sử dụng mặc định từ DeviceAssignments.
+✅ Đã gợi ý người khảo sát từ Users deptId = 295 bằng datalist.
+✅ Vẫn cho phép nhập người khảo sát khác thủ công.
+✅ Đã tạo hệ thống DOCX template → PDF bằng docxtemplater + LibreOffice.
+✅ Đã thêm 2 route xuất PDF:
+   - /repairs/:id/reports/request/pdf
+   - /repairs/:id/reports/inspection/pdf
+✅ Đã test cơ bản chức năng xuất PDF ổn.
+✅ Đã chỉnh tên thiết bị trên mẫu in thành: Loại thiết bị + Tên thiết bị.
+✅ Đã xử lý xóa Repairs khi có RepairReportDetails.
+```
+
+---
+
+## 42. Việc còn cần kiểm tra/hoàn thiện cho Repairs Report
+
+### 42.1 Cần kiểm tra kỹ layout 2 template
+
+Cần mở PDF thực tế và kiểm tra:
+
+```text
+Phiếu đề nghị sửa chữa:
+- Căn lề đúng mẫu.
+- Các dòng dài có xuống dòng đẹp không.
+- Checkbox ☑/☐ hiển thị đúng font.
+- Chữ ký và ngày tháng đúng vị trí.
+- Không tràn trang.
+
+Biên bản kiểm tra:
+- Tiêu đề, quốc hiệu, đơn vị đúng.
+- Dòng tên thiết bị có loại thiết bị + tên thiết bị.
+- Kết quả kiểm tra lấy đúng damageDescription.
+- Hướng khắc phục lấy đúng repairContent.
+- Chữ ký đúng vị trí.
+```
+
+### 42.2 Cần kiểm tra dữ liệu rỗng
+
+Khi một số field chưa nhập, template không nên hiển thị `undefined`, `null` hoặc lỗi.
+
+Service hiện có `clean(value)` để trả chuỗi rỗng, nhưng vẫn cần test bằng phiếu chưa nhập report detail.
+
+### 42.3 Cần kiểm tra production deployment
+
+Khi deploy lên server thật, cần đảm bảo:
+
+```text
+1. Server đã cài LibreOffice.
+2. .env có LIBREOFFICE_PATH đúng.
+3. Thư mục temp/reports tồn tại hoặc app có quyền tạo.
+4. App pool/service user có quyền chạy soffice.exe.
+5. App pool/service user có quyền ghi temp/reports.
+6. 2 template DOCX nằm đúng templates/repairs.
+```
+
+### 42.4 Quản lý file tạm
+
+Hệ thống tạo DOCX/PDF tạm trong:
+
+```text
+temp/reports/
+```
+
+Đã bổ sung cơ chế xóa file tạm sau khi gửi PDF và cleanup dự phòng theo thời gian. Xem chi tiết tại mục 45.
+
+### 42.5 Cần bổ sung log thân thiện hơn
+
+Khi lỗi render DOCX/PDF, nên trả message rõ hơn:
+
+```text
+Không tìm thấy template.
+Template có placeholder lỗi.
+LibreOffice không convert được.
+Không tìm thấy dữ liệu in.
+```
+
+Hiện lỗi có thể bị global error handler trả chung chung.
+
+---
+
+## 43. File mới/thay đổi sau phần Repairs Report
+
+### 43.1 File mới
+
+```text
+services/repairReportService.js
+controllers/repairReportController.js
+
+services/docxReportService.js
+services/repairPrintService.js
+controllers/repairPrintController.js
+
+templates/repairs/repair-request-template.docx
+templates/repairs/repair-inspection-template.docx
+
+temp/reports/
+```
+
+### 43.2 File đã chỉnh
+
+```text
+routes/repair.js
+views/repairs/index.ejs
+public/js/repairs.js
+services/repairPrintService.js
+services/docxReportService.js
+```
+
+### 43.3 Database đã chỉnh
+
+```text
+Bảng:
+- RepairReportDetails
+
+Stored Procedures:
+- sp_RepairReportDetails_GetByRepairId
+- sp_RepairReportDetails_Upsert
+- sp_Repairs_GetPrintDataById
+- sp_RepairReportDetails_GetDefaultDeviceUseDate
+- sp_RepairReportDetails_GetSurveyUsers
+- sp_Repairs_Delete
+```
+
+---
+
+## 44. Ghi chú cho AI/developer xử lý tiếp phần report
+
+Khi tiếp tục sửa phần report, nên kiểm tra theo thứ tự:
+
+```text
+1. Kiểm tra dữ liệu DB:
+   EXEC sp_Repairs_GetPrintDataById @pRepairId = <id>
+
+2. Kiểm tra route:
+   /repairs/:id/reports/request/pdf
+   /repairs/:id/reports/inspection/pdf
+
+3. Kiểm tra template có đúng tên placeholder không.
+
+4. Kiểm tra docxReportService có delimiters {{ }} không.
+
+5. Kiểm tra LibreOffice:
+   where soffice
+   "C:\Program Files\LibreOffice\program\soffice.exe" --version
+
+6. Kiểm tra .env:
+   LIBREOFFICE_PATH=C:\Program Files\LibreOffice\program\soffice.exe
+
+7. Kiểm tra quyền ghi:
+   temp/reports/
+
+8. Nếu lỗi xóa phiếu sửa chữa:
+   kiểm tra sp_Repairs_Delete có xóa RepairReportDetails trước không.
+```
+
+Không nên quay lại hướng in HTML/EJS trực tiếp cho biểu mẫu hành chính, vì có thể gặp lại vấn đề footer URL của trình duyệt và layout khó ổn định.
+
+
+---
+
+## 45. Cập nhật quản lý file tạm report — temp/reports
+
+Sau khi hoàn thiện chức năng xuất report từ DOCX template sang PDF, đã bổ sung cơ chế quản lý file tạm để tránh thư mục `temp/reports` phình to theo thời gian.
+
+### 45.1 Vấn đề đã phát hiện
+
+Mỗi lần user bấm in báo cáo sửa chữa, hệ thống tạo ra file tạm trong:
+
+```text
+temp/reports/
+```
+
+Thông thường mỗi lần in có thể sinh ra:
+
+```text
+repair-request-<repairId>-<timestamp>.docx
+repair-request-<repairId>-<timestamp>.pdf
+repair-inspection-<repairId>-<timestamp>.docx
+repair-inspection-<repairId>-<timestamp>.pdf
+```
+
+Nếu không dọn, server sẽ tích lũy nhiều file rác, làm nặng ổ đĩa và khó bảo trì.
+
+### 45.2 Cách xử lý đã áp dụng
+
+Đã xử lý theo 2 lớp:
+
+```text
+1. Xóa ngay file tạm sau khi PDF đã được đọc vào buffer và gửi cho user.
+2. Thêm cleanup dự phòng để quét file cũ trong temp/reports theo thời gian.
+```
+
+### 45.3 Xóa file ngay sau khi gửi PDF
+
+File đã cập nhật:
+
+```text
+controllers/repairPrintController.js
+```
+
+Controller hiện dùng `try/finally` để đảm bảo sau khi tạo và gửi PDF, hệ thống gọi cleanup file tạm:
+
+```js
+finally {
+  await cleanupGeneratedReportFiles(result);
+}
+```
+
+Các file được xóa gồm:
+
+```text
+result.docxOutputPath
+result.pdfOutputPath
+```
+
+Vì controller đang gửi PDF bằng:
+
+```js
+res.send(result.pdfBuffer)
+```
+
+PDF đã được đọc vào RAM trước khi response gửi đi, nên có thể xóa file `.pdf` vật lý trong `temp/reports` ngay sau đó mà không ảnh hưởng việc user xem/in PDF.
+
+Log khi xóa thành công:
+
+```text
+[REPORT] Deleted temp file: ...
+```
+
+Nếu không xóa được, chỉ log warning, không throw lỗi để tránh ảnh hưởng response cho user:
+
+```text
+[REPORT] Cannot delete temp file: ...
+```
+
+### 45.4 Cleanup dự phòng
+
+Đã đề xuất/thêm utility:
+
+```text
+utils/cleanupTempReports.js
+```
+
+Utility này có 2 hàm:
+
+```js
+cleanupTempReports({ reportsDir, maxAgeMinutes })
+startTempReportsCleanup({ reportsDir, maxAgeMinutes, intervalMinutes })
+```
+
+Mục tiêu:
+
+```text
+- Khi server khởi động: quét và xóa file tạm cũ.
+- Khi server đang chạy: định kỳ quét lại để dọn file còn sót.
+```
+
+Cấu hình khuyến nghị:
+
+```js
+startTempReportsCleanup({
+  reportsDir: REPORTS_TEMP_DIR,
+  maxAgeMinutes: 60,
+  intervalMinutes: 30
+});
+```
+
+Ý nghĩa:
+
+```text
+- Xóa file cũ hơn 60 phút.
+- Mỗi 30 phút quét lại một lần.
+```
+
+### 45.5 Cấu hình trong index.js
+
+Trong `index.js`, cần import utility cleanup:
+
+```js
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { startTempReportsCleanup } from './utils/cleanupTempReports.js';
+```
+
+Nếu `index.js` đã có `path` hoặc `fileURLToPath` thì không import trùng.
+
+Cấu hình thư mục temp report:
+
+```js
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const REPORTS_TEMP_DIR = path.join(__dirname, 'temp', 'reports');
+
+startTempReportsCleanup({
+  reportsDir: REPORTS_TEMP_DIR,
+  maxAgeMinutes: 60,
+  intervalMinutes: 30
+});
+```
+
+### 45.6 Lưu ý khi deploy server thật
+
+Khi deploy lên server production, cần đảm bảo user chạy Node.js có quyền:
+
+```text
+- Tạo thư mục temp/reports nếu chưa tồn tại.
+- Ghi file .docx/.pdf tạm.
+- Đọc file PDF tạm.
+- Xóa file tạm sau khi gửi response.
+```
+
+Nếu chạy bằng IIS/PM2/Windows Service, cần kiểm tra quyền của account chạy process.
+
+### 45.7 Trạng thái đã test
+
+Người dùng đã test thực tế:
+
+```text
+✅ PDF vẫn mở được để xem/in.
+✅ File DOCX/PDF tạm được xóa sau khi user nhận PDF.
+✅ Không còn giữ file report tạm sau mỗi lần in thành công.
+```
+
+### 45.8 Quy tắc sau này
+
+`temp/reports` chỉ dùng cho file tạm. Không dùng thư mục này để lưu lịch sử file đã in.
+
+Nếu sau này cần lưu lịch sử report đã xuất, nên tạo cơ chế riêng:
+
+```text
+reports/archive/
+hoặc bảng RepairReportFiles
+```
+
+Không nên trộn file tạm và file lưu trữ lâu dài trong cùng `temp/reports`.

@@ -2,6 +2,7 @@ import express from 'express';
 import methodOverride from 'method-override';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { startTempReportsCleanup } from './utils/cleanupTempReports.js';
 import session from 'express-session';
 import 'dotenv/config';
 import MSSQLStore from './utils/sessionStore.js'; 
@@ -42,6 +43,18 @@ app.use((req,res,next) => {
       }
   }
   next();
+});
+
+//cleanup dự phòng khi server khởi động hoặc chạy định kỳ
+const __filenametemp = fileURLToPath(import.meta.url);
+const __dirnametemp = path.dirname(__filenametemp);
+
+const REPORTS_TEMP_DIR = path.join(__dirnametemp, 'temp', 'reports');
+
+startTempReportsCleanup({
+  reportsDir: REPORTS_TEMP_DIR,
+  maxAgeMinutes: 60,
+  intervalMinutes: 30
 });
 
 app.use((req, res, next) => {
