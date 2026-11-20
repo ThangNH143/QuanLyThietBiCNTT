@@ -1,25 +1,22 @@
-// ecosystem.config.js
+// ecosystem.config.cjs — Cấu hình PM2 (chế độ fork, 1 tiến trình cho IIS ARR)
+// Lưu ý bảo mật (PROJECT-RULES.md Mục 4.1):
+// TUYỆT ĐỐI KHÔNG ghi IP máy chủ, tên tài khoản hay mật khẩu SQL Server vào file này.
+// Toàn bộ thông tin kết nối DB và SESSION_SECRET được đọc tự động từ file .env trên máy chủ.
 
 module.exports = {
-  apps : [{
-    name   : "QuanLyThietBiCNTT",
-    script : "./index.js",
-    exec_mode: "fork",
-    instances: 1,// Chỉ cần 1 instance vì dùng IIS ARR
-    watch: false,// Tắt watch trong môi trường production
-    
-    // Khai báo biến môi trường cho PM2
-    env: {
-      "NODE_ENV": "production",
-      "PORT": 3000,
-      "App_Base_Path": "/QuanLyThietBiCNTT",
-      
-      // CẤU HÌNH DB MỚI (KHÔNG CẦN BACKSLASH)
-      "DB_HOST": "192.168.1.140",// Tên server (hoặc IP)
-      "DB_PORT": "1433",// THAY THẾ bằng port Tĩnh hoặc Động bạn tìm thấy
-      "DB_USER": "sa",
-      "DB_PASSWORD": "Cntt!p@ss",
-      "DB_DATABASE": "QuanLyThietBiCNTT"
+  apps: [
+    {
+      name: "QuanLyThietBiCNTT",
+      script: "./index.js", // Khi Cutover sang v3.0 (Phase 8) sẽ đổi thành "./server/src/server.js"
+      exec_mode: "fork",
+      instances: 1, // Chỉ chạy 1 instance vì dùng IIS ARR & Touch Throttling Session
+      watch: false,
+      env: {
+        NODE_ENV: "production",
+        PORT: 3000,
+        APP_BASE_PATH: "/QuanLyThietBiCNTT",
+        App_Base_Path: "/QuanLyThietBiCNTT"
+      }
     }
-  }]
+  ]
 };

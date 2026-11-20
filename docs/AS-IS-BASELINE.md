@@ -1,8 +1,9 @@
 # 7. AS-IS-BASELINE.md — Hiện trạng Thực tế của Hệ thống (DB + Code)
 
 > **Dự án:** Hệ thống Quản lý Thiết bị CNTT (`QuanLyThietBiCNTT`)  
-> **Phiên bản:** 1.1 (Số liệu hiện trạng 100% xác minh từ DB/code thật; đồng bộ cột Quyết định chốt G1/G7/G8/G10/G17 theo **Lộ trình B v3.0**: `server/` Modular API + `client/` React/Vite Offline SPA)  
+> **Phiên bản:** 1.2 (Đồng bộ tag `pre-v3.0`, nhánh `feature/v3.0`, lộ trình dọn SP tại `Gate 8`, và đã dọn sạch IP/mật khẩu cứng trong `ecosystem.config.cjs` đạt `0` findings với `self-audit.mjs --all`)  
 > **Cập nhật lần cuối:** 2026-11-20  
+> **Xem thay đổi chi tiết tại:** `CHANGELOG.md` mục `[3.0.2-plan]`  
 > **Trạng thái:** ☑ Đã hoàn tất khảo sát hiện trạng (Code + Schema + Preflight); chờ hoàn thành T0.1 (tạo DB `_DEV` & tag `pre-v3.0`) trước khi chạy migration Phase 1.
 
 > [!CAUTION]
@@ -28,13 +29,13 @@
 | Hạng mục | Giá trị đã xác minh | Mức |
 |---|---|---|
 | Nền tảng ứng dụng | Node.js `v24.21.0`, **Express `^5.1.0`**, ES Modules (`"type": "module"`), `mssql ^11.0.1`, `express-session ^1.18.1`, `connect-mssql ^1.5.0` *(cài trong `package.json` nhưng không import; dùng `utils/sessionStore.js` tự viết)*, `method-override ^3.0.0`, `dotenv ^17.1.0`, `ejs ^3.1.10`, `axios ^1.10.0`, `body-parser ^2.2.0`, `docxtemplater ^3.68.7`, `pizzip ^3.2.0` | ☑ |
-| Triển khai hiện tại | IIS Reverse Proxy (`web.config` đang khai báo chồng chéo handler `iisnode` với `maxConcurrentRequests="1"` + URL Rewrite Proxy về `localhost:3000`) và PM2 (`ecosystem.config.cjs`, `exec_mode: "fork"`, `instances: 1`, `App_Base_Path: "/QuanLyThietBiCNTT"`, **hiện đang chứa mật khẩu DB plaintext — phải chuyển sang `.env` ở T2.1/T2.5**) | ☑ |
+| Triển khai hiện tại | IIS Reverse Proxy (`web.config` đang khai báo chồng chéo handler `iisnode` với `maxConcurrentRequests="1"` + URL Rewrite Proxy về `localhost:3000`) và PM2 (`ecosystem.config.cjs`, `exec_mode: "fork"`, `instances: 1`, `APP_BASE_PATH: "/QuanLyThietBiCNTT"` — **đã xóa IP & mật khẩu DB plaintext khỏi file cấu hình để đọc từ `.env`; cần đổi mật khẩu SQL login cũ khi tạo `qltb_app` ở `T0.1`**) | ☑ |
 | Phiên bản SQL Server & compatibility level | **Microsoft SQL Server 2019 (RTM) - 15.0.2000.5 (X64) Developer Edition**, `compatibility_level = 140` (hỗ trợ đầy đủ `CREATE OR ALTER`, `STRING_AGG`, `STRING_SPLIT`, `Filtered Unique Index`, `Table-Valued Parameters`) | ☑ |
 | Tên DB Production | `QuanLyThietBiCNTT` | ☑ |
 | DB DEV (`QuanLyThietBiCNTT_DEV`) & Restore backup | Chưa khởi tạo — thực hiện ở Task `T0.1` | ☐ |
 | Login `qltb_migrator` & `qltb_app` trên DEV | Chưa tạo — thực hiện ở Task `T0.1` | ☐ |
 | LibreOffice trên máy phát triển local | Không cài tại đường dẫn mặc định `C:\Program Files\LibreOffice\program\soffice.exe` trên máy dev hiện tại (cài trên máy chủ chạy Node/Production theo `LIBREOFFICE_PATH`) | ☑ |
-| Git & Tag `pre-v2.6` | Repo có thư mục `.git`; cần tạo tag `pre-v2.6` & nhánh `feature/v2.6` ở Task `T0.1` | ☐ |
+| Git & Tag `pre-v3.0` | Repo có thư mục `.git`; cần commit bộ tài liệu v3.0, tạo tag `pre-v3.0` & nhánh `feature/v3.0` ở Task `T0.1` | ☐ |
 
 ---
 
@@ -84,8 +85,8 @@
 | 07 Số phiếu sửa chữa backfill | Ghi mốc | **0 dòng** | Không | ☑ |
 | 08 Loại thiết bị `code = 'IN'` | 1 dòng | **1 dòng** (`id = 1, code = 'IN', name = N'Máy In'`; hiện `0` thiết bị máy in) | Không | ☑ |
 | 10 Bảng `Sessions` | Ít rác | **`4.277` dòng hết hạn, `0` active** | **Có** (dọn phiên hết hạn & tắt `saveUninitialized`) | ☑ |
-| 11 SP tham chiếu bảng không tồn tại | Ghi nhận | **5 SP chết** tham chiếu bảng `DeviceHardwareUnits` (không có `_`): `sp_DeviceHardwareUnits_Create`, `_Update`, `_Delete`, `_GetAll`, `_GetByDevice` | Đưa vào danh sách dọn Phase 8 (`T8.5`) | ☑ |
-| 12 Ứng viên SP backup / legacy | Ghi nhận | **10 SP backup** (`sp_*_Delete_20251226`, `sp_Devices_Delete@20251226`, `sp_DeviceAssignments_Get_BK20260107`) + **6 SP cũ không phân trang/không dùng** (`sp_Departments_GetAll`, `sp_DeviceAssignments_Get`, `sp_DeviceHardwareUnits_GetDevicesWithHardware`, `sp_Devices_HardwareUnits_Attach`, `sp_Devices_HardwareUnits_Detach`, `sp_Repairs_GetAll`) + `sp_CheckRecordReference` | Chỉ dọn ở Phase 8 (`T8.5`) sau khi grep xác nhận | ☑ |
+| 11 SP tham chiếu bảng không tồn tại | Ghi nhận | **5 SP chết** tham chiếu bảng `DeviceHardwareUnits` (không có `_`): `sp_DeviceHardwareUnits_Create`, `_Update`, `_Delete`, `_GetAll`, `_GetByDevice` | Đưa vào danh sách dọn tại `🔒 GATE 8` (sau ≥ 2 tuần vận hành ổn định) | ☑ |
+| 12 Ứng viên SP backup / legacy | Ghi nhận | **10 SP backup** (`sp_*_Delete_20251226`, `sp_Devices_Delete@20251226`, `sp_DeviceAssignments_Get_BK20260107`) + **6 SP cũ không phân trang/không dùng** (`sp_Departments_GetAll`, `sp_DeviceAssignments_Get`, `sp_DeviceHardwareUnits_GetDevicesWithHardware`, `sp_Devices_HardwareUnits_Attach`, `sp_Devices_HardwareUnits_Detach`, `sp_Repairs_GetAll`) + `sp_CheckRecordReference` | Chỉ dọn tại `🔒 GATE 8` (sau ≥ 2 tuần go-live) sau khi grep xác nhận `0` caller | ☑ |
 | 13 SP có `QUOTED_IDENTIFIER OFF` | 0 dòng | **0 dòng** | Không | ☑ |
 | 14 Mọi SP đọc `Devices_HardwareUnits` | Lọc `isInactive = 0` | Tất cả 7 SP active `sp_DeviceHardwareUnits_*` và 3 SP `sp_Repairs_*` đều đã lọc `isInactive = 0` | Không | ☑ |
 
@@ -136,7 +137,7 @@ public/styles/main.css ; public/images/ (logo, nền bệnh viện, các icon PN
 - **`db/db.js`:** `pool.max = 10, min = 0`; đọc biến môi trường không kiểm tra thiếu.
 - **`views/partials/header.ejs`:** Nạp toàn bộ Bootstrap 5.3.3, jQuery 3.6.0, Select2, SweetAlert2 từ CDN Internet; hardcode URL `/` không có `<%= basePath %>`; 6 view con nạp trùng thêm Bootstrap 5.3.0.
 - **`web.config`:** Có `<add name="iisnode" .../>` với `maxConcurrentRequests="1"` chồng chéo với URL Rewrite Proxy `http://localhost:3000/{R:1}`.
-- **`ecosystem.config.cjs`:** Chứa thông tin kết nối DB và mật khẩu plaintext.
+- **`ecosystem.config.cjs`:** Đã dọn sạch IP và mật khẩu DB plaintext (chuyển hoàn toàn sang đọc từ `.env`); cần đổi mật khẩu SQL login cũ trên SQL Server vì lịch sử commit Git trước đây từng lưu mật khẩu đó.
 
 ---
 
@@ -169,4 +170,4 @@ public/styles/main.css ; public/images/ (logo, nền bệnh viện, các icon PN
 ## 5. Phê duyệt Baseline (Điều kiện mở Phase 1)
 - ☑ Đã hoàn thành khảo sát 100% số liệu, schema, SP và source code thật (0 ô `CHƯA XÁC MINH`).
 - ☑ Chủ dự án đã duyệt toàn bộ quyết định bổ sung & xử lý Gap List `G1–G19` trong phiên 2026-11-20.
-- ☐ Chủ dự án hoàn thành **Task T0.1** (backup Production → restore ra `QuanLyThietBiCNTT_DEV` → tạo login `qltb_migrator` & `qltb_app` → tạo tag Git `pre-v2.6`) và xác nhận bắt đầu **Phase 1**.
+- ☐ Chủ dự án hoàn thành **Task T0.1** (đổi mật khẩu SQL login cũ → backup Production → restore ra `QuanLyThietBiCNTT_DEV` → tạo login `qltb_migrator` & `qltb_app` → commit bộ tài liệu v3.0 → tạo tag Git `pre-v3.0` & nhánh `feature/v3.0`) và xác nhận bắt đầu **Phase 1A**.

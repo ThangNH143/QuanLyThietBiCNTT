@@ -4,6 +4,58 @@
 
 ---
 
+## [3.0.3-plan] — 2026-11-20 (Rà soát Chuyên sâu Tầng Code Thật & Bổ sung 3 Thực hành Tốt nhất từ Hệ thống ITAM / WebApp Bệnh viện Thực tế)
+
+> **Trạng thái:** chỉ cập nhật tài liệu thiết kế (`docs/*.md` v3.2 / v5.3, `CHANGELOG.md`); **chưa thay đổi** DB Production hay logic code ứng dụng.
+
+### Decisions (quyết định chốt sau phiên `/grill-me` rà soát nâng cao 2026-11-20)
+36. **Bổ sung CRUD Danh mục Nhân sự (`/api/v1/core/users`) cho Admin (Xử lý cột `Users.Id` không có `IDENTITY`):** Bổ sung `sp_Users_GetPaged/Create/Update/ToggleStatus` và API `/api/v1/core/users` để Admin chủ động thêm/sửa/tạm ngưng nhân sự mới ngay trên Web mà không cần mở SSMS; khi không truyền `@pId` từ HIS, `sp_Users_Create` tự sinh an toàn `@newId = ISNULL(MAX(Id), 0) + 1 FROM dbo.Users WITH (UPDLOCK, HOLDLOCK)`.
+37. **Khép kín luồng 1-Click *"Sửa chữa Hoàn tất → Tự tháo & Khóa Linh kiện Hỏng"* (Chuẩn Snipe-IT / GLPI):** Bổ sung tham số cuối `@pDetachAndDeactivateUnits BIT = 0` vào `sp_Repairs_Update` (giữ tương thích ngược 100% với `pre-v3.0`) và checkbox trên Modal `/repairs` để khi phiếu sửa chuyển sang `completed`, kỹ thuật viên có thể tháo linh kiện hỏng khỏi máy (`Devices_HardwareUnits.isInactive = 1, detachedDate = ...`) và đặt `HardwareUnits.isInactive = 1` trong cùng **1 Transaction**.
+38. **Chống Trắng trang trên 200 Máy trạm LAN khi Deploy Bản mới, Graceful Shutdown 15s & Tương thích CSV Excel Vùng Tiếng Việt (`vi-VN`):**
+    - Thêm `<AppErrorBoundary>` vào `client/src/design-system/components/` và bắt sự kiện `vite:preloadError` ở `client/src/main.tsx` để tự động reload mượt mà khi máy chủ vừa lên bản build mới.
+    - Bổ sung quy trình **Graceful Shutdown 15 giây** tại `server/src/server.js` (`SIGINT`/`SIGTERM` → chờ request & job PDF đang chạy → `pool.close()`).
+    - Trong `server/src/shared/csv.js`, giữ mặc định xuất UTF-8 BOM dấu phẩy `,` và hỗ trợ thêm tùy chọn `?delimiter=semicolon` (dấu `;`) cho các máy trạm Windows tại bệnh viện đặt Regional Format `vi-VN`.
+    - Đồng bộ 3 chi tiết từ code thật: cặp thẻ ngoặc kép `{{placeholder}}` (`delimiters: { start: '{{', end: '}}' }`) trong `docxReportService.js`, cờ `-env:UserInstallation=file:///...` cô lập 2 profile LibreOffice trên Windows, và đưa kiểm tra khóa ngoại `IF EXISTS (...) THROW 50009` trực tiếp vào từng SP `sp_<Entity>_Delete` (thay thế hoàn toàn Dynamic SQL `sp_CheckRecordReference`).
+
+### Docs (nhật ký chỉnh sửa theo `PROJECT-RULES.md` mục 9)
+- `DATA-SCHEMA.md` v3.1 → v3.2 — mục 4, 4.1, 4.2: bổ sung `sp_Users_GetPaged/Create/Update/ToggleStatus` (sinh `Id` với `UPDLOCK/HOLDLOCK`), tham số `@pDetachAndDeactivateUnits BIT = 0` trong `sp_Repairs_Update`, kiểm tra khóa ngoại tường minh trong mọi `sp_<Entity>_Delete`, và chuẩn hóa thẻ `{{tag}}` ngoặc kép cho `docxtemplater` — Lý do: đồng bộ code thật & nghiệp vụ ITAM bệnh viện — Ảnh hưởng: T1.8, T1.9, T1.11, T1.13, T6.1–T6.3.
+- `ARCHITECTURE.md` v3.1 → v3.2 — mục 2.3, 3.2, 5: bổ sung cờ `-env:UserInstallation=file:///...` cho 2 slot LibreOffice trên Windows, quy trình Graceful Shutdown 15s, và component `<AppErrorBoundary>` + `vite:preloadError` (nâng tổng số component dùng chung lên 15) — Lý do: đảm bảo độ bền vận hành 200 máy trạm LAN — Ảnh hưởng: T2.5, T2.7, T6.1.
+- `API-CONTRACTS.md` v3.1 → v3.2 — mục 1.4, 2.2, 3.4, 3.5: bổ sung API CRUD `/api/v1/core/users`, cờ `detachAndDeactivateUnits` trong `PUT /api/v1/itam/repairs/:id`, tùy chọn `?delimiter=semicolon` cho CSV, và thẻ `{{placeholder}}` — Lý do: đồng bộ hợp đồng API với 3 quyết định mới — Ảnh hưởng: T2.3, T4.1, T6.2, T6.3.
+- `PRD.md` v3.1 → v3.2 — mục 2.2, 3.1, 3.6: cập nhật phân quyền & yêu cầu chức năng cho Danh mục Nhân sự (`Users`) và tùy chọn 1-Click tháo linh kiện hỏng khi hoàn tất sửa chữa — Lý do: đồng bộ yêu cầu nghiệp vụ — Ảnh hưởng: Phase 1B, 4, 6.
+- `UI-DESIGN.md` v3.1 → v3.2 — mục 3, 4.4: thêm `<AppErrorBoundary>` vào bảng component `design-system/`, bổ sung wireframe quản lý Danh mục Nhân sự và checkbox tháo linh kiện hỏng trên Modal `/repairs` — Lý do: đồng bộ giao diện — Ảnh hưởng: T2.7, T4.1, T6.3.
+- `IMPLEMENTATION-PLAN.md` v5.2 → v5.3 — mục T1.8, T1.9, T1.13, T2.3, T2.5, T2.7, T4.1, T6.1, T6.3: cập nhật chi tiết thực thi & tiêu chí nghiệm thu cho toàn bộ các bổ sung trên — Lý do: kế hoạch thi công khớp 100% với đặc tả v3.2 — Ảnh hưởng: Phase 1B, 2A, 2B, 4, 6.
+- `CHANGELOG.md` — thêm mục `[3.0.3-plan]` này.
+
+---
+
+## [3.0.2-plan] — 2026-11-20 (Rà soát & Khép kín 100% Đặc tả Tiền Thi công v3.0: Full DDL, `npm workspaces`, Approved Packages, Bảng `.env`, Thứ tự `recordsets[]`, Dọn Mật khẩu Cứng `ecosystem.config.cjs`)
+
+> **Trạng thái:** đã dọn sạch IP & mật khẩu SQL ghi cứng khỏi `ecosystem.config.cjs` (`self-audit.mjs --all` đạt `PASS 0 findings`) và bổ sung/đồng bộ toàn bộ bộ tài liệu `docs/*.md` + `project_context.md`; **chưa thay đổi** DB Production hay logic code ứng dụng.
+
+### Decisions (quyết định chốt sau phiên `/grill-me` rà soát tiền thi công 2026-11-20)
+32. **Cấu trúc Quản lý Gói Monorepo (`npm workspaces` tại Root):** Khai báo `"workspaces": ["server", "client"]` trong `package.json` gốc, dùng chung 1 `package-lock.json` và `node_modules/` để `scripts/migrate.js` (T0.3) và `scripts/seed-admin.js` (T1.2) chạy xuyên suốt từ Phase 0–1 không lặp thư viện; phê duyệt sẵn danh sách gói `npm` chuẩn tại `ARCHITECTURE.md` mục 3.4.
+33. **Chiến lược Định tuyến Sub-path IIS "Linh hoạt Kép" (Dual-Path Tolerant) & Tương thích ngược `.env`:** Frontend (`apiClient.ts`) gọi API qua `${import.meta.env.BASE_URL}api/v1/...`; Vite Dev Server (`vite.config.ts`) proxy đồng thời cả `'/QuanLyThietBiCNTT/api'` và `'/api'` về `localhost:3000`; Express `BasePath Stripper` cắt idempotent tiền tố `APP_BASE_PATH` nếu còn (và giữ nguyên nếu IIS ARR đã cắt); `server/src/config/env.js` hỗ trợ fallback đọc cả `APP_BASE_PATH` và `App_Base_Path`.
+34. **Dọn sạch Bí mật trong `ecosystem.config.cjs` trước khi gắn Tag `pre-v3.0`:** Xóa ngay IP và mật khẩu SQL plaintext khỏi `ecosystem.config.cjs` (để Node/PM2 đọc từ `.env`), giúp `self-audit.mjs --all` đạt `0` findings ngay từ đầu và bản snapshot `pre-v3.0` không lưu mật khẩu cứng; bổ sung bước đổi mật khẩu SQL login cũ vào `T0.1`.
+35. **Chuẩn hóa Mẫu Word Biên bản Bàn giao/Thu hồi (`T6.1`) & 5 Thẻ KPI Dashboard:** Chốt bộ thẻ `{placeholder}` của `sp_DeviceAssignments_GetPrintDataById` tại `DATA-SCHEMA.md` 4.2 để AI tự sinh 2 file `.docx` theo khung hành chính BVĐKKV Long Khánh ở `T6.1`; thống nhất hàng đầu Trang chủ Dashboard hiển thị **5 thẻ KPI** (`Tổng TB hoạt động`, `Đang sử dụng`, `Trong kho`, `Đang sửa chữa`, `Sắp hết bảo hành`) giữa `PRD.md`, `UI-DESIGN.md` và `API-CONTRACTS.md`.
+
+### Security & Fixed
+- `ecosystem.config.cjs` — gỡ bỏ IP nội bộ và thông tin tài khoản/mật khẩu SQL Server ghi cứng (đạt `0` findings khi quét `node .agents/skills/qltb-task-execution/scripts/self-audit.mjs --all`).
+- `project_context.md` — bổ sung khung cảnh báo `> [!WARNING]` ở đầu file khẳng định đây là tài liệu lịch sử v1.x (`G17`), ngăn AI Agent đọc nhầm quy ước route legacy cũ.
+- Khắc phục toàn bộ các điểm thiếu đặc tả (`B1–B7`) và bất đồng bộ nhỏ giữa các tài liệu (`C1–C8`, `D1–D5`) từ báo cáo rà soát tiền thi công.
+
+### Docs (nhật ký chỉnh sửa theo `PROJECT-RULES.md` mục 9)
+- `DATA-SCHEMA.md` v3.0 → v3.1 — mục 2.1, 2.3, 2.4, 2.5, **thêm mục 4.1 & 4.2**: bổ sung khối DDL `CREATE TABLE` đầy đủ kiểu dữ liệu, độ dài và `CHECK` constraint cho `Accounts`, `AuditLogs`, `SchemaVersions` (kèm cơ chế bootstrap tự động trong `migrate.js`), `RepairHardwareUnits`, 7 bảng `Printer*`, 3 Table Types; thêm bảng ánh xạ thứ tự `recordsets[]` của toàn bộ SP phân trang (`extractPagedRecordsets`) và hợp đồng thẻ `{placeholder}` in PDF Bàn giao/Thu hồi — Lý do: tuân thủ tuyệt đối quy tắc Zero-Guessing — Ảnh hưởng: Phase 0, 1A, 1B, 2A, 6, 7.
+- `ARCHITECTURE.md` v3.0 → v3.1 — mục 3.2, 3.3, **thêm mục 3.4**, mục 4, 5, **thêm mục 5.1**: bổ sung cấu trúc `npm workspaces`, chế độ định tuyến Sub-path Linh hoạt Kép, bảng Approved Dependencies cho `root`/`server`/`client`, bảng đặc tả 22 biến môi trường `.env`, đồng bộ tên `QrPrintModal.tsx` và đủ 14 component `design-system/` — Lý do: khóa chặt kiến trúc kỹ thuật trước Phase 0 & Phase 2 — Ảnh hưởng: Phase 0–8.
+- `API-CONTRACTS.md` v3.0 → v3.1 — mục 3.3 & 3.4: bổ sung đặc tả 8 cột chuẩn của file CSV Bulk Import Thiết bị (`code,name,deviceTypeCode,purchaseDate,warrantyDate,deptCode,hardwareSpec,note`), luồng xác thực deep-link QR di động (`?next=`) và tham chiếu `{placeholder}` PDF Bàn giao/Thu hồi — Lý do: đủ hợp đồng API cho Phase 5 & Phase 6 — Ảnh hưởng: T5.1, T5.3, T6.1, T6.2.
+- `PRD.md` v3.0 → v3.1 — mục 1.2, 3.2, 4.1: đồng bộ 5 thẻ KPI hàng đầu trên Dashboard, 11 Cổng Nghiệm thu (`🔒 GATE 0 → 8`) và tham chiếu `ARCHITECTURE.md` 2.3 & 6 — Lý do: thống nhất 100% với `UI-DESIGN.md` và `IMPLEMENTATION-PLAN.md` — Ảnh hưởng: T3.3, toàn bộ Gate.
+- `UI-DESIGN.md` v3.0 → v3.1 — mục 3: đồng bộ bảng 14 component trong `client/src/design-system/` và bổ sung cơ chế **Dev Role Switcher (`admin`/`technician`/`viewer`)** cho trang Showcase UI Kit ở Phase 2B — Lý do: giúp nghiệm thu trực quan 3 vai trò tại `🔒 GATE 2B` trước khi dựng `/login` ở Phase 3 — Ảnh hưởng: T2.7, Gate 2B.
+- `IMPLEMENTATION-PLAN.md` v5.1 → v5.2 — mục T0.1, T0.3, T1.6/T1.7, T2.6, T2.7, T2.8, **tách rõ T2.9**, Gate 2B, T6.1, Phụ lục A: bổ sung checklist bảo mật/PATH/đổi mật khẩu SQL ở T0.1, bootstrap `SchemaVersions` & `npm workspaces` ở T0.3, làm rõ đánh số `T1.6 & T1.7 (Gộp)` và `T2.9`, Dev Role Switcher ở T2.7, tự sinh 2 mẫu Word Bàn giao/Thu hồi ở T6.1 — Lý do: lộ trình rõ ràng, không còn điểm nghẽn giữa các Phase — Ảnh hưởng: Phase 0–8.
+- `PROJECT-RULES.md` v3.0 → v3.1 — mục 3.2, 12.4: liên kết trực tiếp tới bảng thứ tự `recordsets[]` (`DATA-SCHEMA.md` 4.1), bảng Approved Dependencies (`ARCHITECTURE.md` 3.4) và bảng biến `.env` (`ARCHITECTURE.md` 5.1) — Lý do: đồng bộ quy tắc kiểm tra với đặc tả mới — Ảnh hưởng: mọi Task.
+- `AS-IS-BASELINE.md` v1.1 → v1.2 — mục 1, 2.3, 3.3, 5: sửa tham chiếu `pre-v2.6` → `pre-v3.0`, `feature/v2.6` → `feature/v3.0`, `T8.5` → `🔒 GATE 8`, và ghi nhận `ecosystem.config.cjs` đã dọn sạch mật khẩu plaintext — Lý do: xóa bỏ toàn bộ tham chiếu cũ còn sót — Ảnh hưởng: T0.1, Gate 8.
+- `CHANGELOG.md` — thêm mục `[3.0.2-plan]` này.
+
+---
+
 ## [3.0.1-plan] — 2026-11-20 (Bổ sung Phụ lục A Hướng dẫn Chọn Model Gemini 4, Lệnh `/` & Mở Chat theo Giai đoạn vào `IMPLEMENTATION-PLAN.md`)
 
 > **Trạng thái:** chỉ cập nhật tài liệu (`docs/IMPLEMENTATION-PLAN.md`, `CHANGELOG.md`); chưa thay đổi DB Production hay source code ứng dụng.

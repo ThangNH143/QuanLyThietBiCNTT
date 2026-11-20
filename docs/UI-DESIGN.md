@@ -3,9 +3,9 @@
 > **Dự án:** Hệ thống Quản lý Thiết bị CNTT (`QuanLyThietBiCNTT`) & **Bộ UI/UX Chuẩn dùng chung cho toàn bộ WebApp nội bộ BVĐKKV Long Khánh**  
 > **Stack UI:** React 19 + TypeScript + Vite + Tailwind CSS + `lucide-react` + `qrcode` + Font tiếng Việt WOFF2 nội bộ (**100% Offline LAN, 0 CDN**)  
 > **Tham chiếu nhận diện:** Đồng bộ trực tiếp với mẫu **WebApp Báo cáo Bệnh viện ĐKKV Long Khánh** (Sidebar xanh dương y tế `#00548F`, Topbar gạch dọc xanh `#005A9C`, nút chính xanh ngọc `#0B8A5C`, bảng header xanh đậm chữ trắng) kết hợp chuẩn UX hệ thống y tế/ITAM chuyên nghiệp (OpenMRS, Epic density, Snipe-IT, GLPI).  
-> **Phiên bản:** 3.0 (**Lộ trình B**)  
+> **Phiên bản:** 3.2 (Bổ sung `<AppErrorBoundary>` chống trắng trang khi deploy bản mới lên 200 máy trạm LAN, Tab/Modal quản lý Danh mục Nhân sự `dbo.Users`, và checkbox 1-Click tháo & khóa linh kiện hỏng khi hoàn tất Phiếu sửa chữa)  
 > **Cập nhật lần cuối:** 2026-11-20  
-> **Xem thay đổi chi tiết tại:** `CHANGELOG.md` mục `[3.0.0-plan]`
+> **Xem thay đổi chi tiết tại:** `CHANGELOG.md` mục `[3.0.3-plan]`
 
 ---
 
@@ -95,19 +95,23 @@ Toàn bộ WebApp nội bộ của Bệnh viện (QLTB CNTT hôm nay, và Báo c
 
 ---
 
-## 3. Bộ Component Dùng Chung Tái sử dụng (`client/src/design-system/components/`)
+## 3. Bộ Component Dùng Chung Tái sử dụng (`client/src/design-system/`)
 
 | Component | Mô tả chuẩn hành vi (dùng chung cho QLTB CNTT & mọi WebApp sau) |
 |---|---|
-| `<HospitalShell>` | Khung Sidebar xanh `#00548F` + Accordion Menu cấu hình bằng JSON `navigation.ts` + User Card + Topbar gạch dọc `#005A9C` + nút Đổi mật khẩu & Đăng xuất đỏ + Footer PCNTT. |
+| `<HospitalShell>` (`layout/`) | Khung Sidebar xanh `#00548F` + Accordion Menu cấu hình bằng JSON `navigation.ts` + User Card + Topbar gạch dọc `#005A9C` + nút Đổi mật khẩu & Đăng xuất đỏ + Footer PCNTT. |
+| `<PageHeader>` | Thanh tiêu đề khối nội dung có gạch dọc xanh `#005A9C` (`4px`), phụ đề mô tả ngắn và cụm nút hành động chính bên phải. |
 | `<FilterCard>` | Thẻ bộ lọc nền trắng bo `12px`, lưới responsive 3–5 cột, tự debounce `300 ms` cho ô tìm kiếm chữ, hàng nút thao tác (xanh ngọc `#0B8A5C` cho Xem/Lọc/Thêm, xanh dương `#005A9C` cho Xuất Excel/In, xám viền cho Xóa lọc). |
-| `<DataTable>` | Header xanh `#005A9C` chữ trắng IN HOA, đường kẻ chia cột mảnh `rgba(255,255,255,0.2)`, zebra hover `#F8FAFC`, sticky header + sticky action column, **Empty/Loading căn giữa viewport**, hỗ trợ chọn checkbox nhiều dòng (cho In tem QR) và `<Pagination>` chân bảng. |
+| `<DataTable>` & `<Pagination>` | Header xanh `#005A9C` chữ trắng IN HOA, đường kẻ chia cột mảnh `rgba(255,255,255,0.2)`, zebra hover `#F8FAFC`, sticky header + sticky action column, **Empty/Loading căn giữa viewport**, hỗ trợ chọn checkbox nhiều dòng (cho In tem QR) và `<Pagination>` chân bảng. |
 | `<Modal>` & `<Drawer>` | Hỗ trợ 3 kích thước (`md`, `lg`, `xl`), đóng bằng `Esc`/nút `X` (trừ Modal ép đổi mật khẩu khóa cứng), tự reset form + xóa lỗi validation khi đóng/mở, footer nút `Lưu` tự khóa (`disabled` + spinner) chống bấm đúp. |
 | `<SearchableSelect>` | Component chọn có ô gõ tìm tiếng Việt không dấu/có dấu (thay thế Select2, chạy mượt 100% bên trong Modal không bao giờ bị kẹt focus hay vỡ z-index!). |
+| `<DateInput>` | Ô nhập ngày định dạng chuẩn Việt Nam (`dd/MM/yyyy`) kèm lịch chọn nhanh, tự chuyển đổi sang chuỗi ISO khi gọi API. |
 | `<StatusBadge>` | Hiển thị đúng bảng màu pastel chuẩn mục 1.2 cho `usageStatus`, `warrantyStatus`, trạng thái sửa chữa, tồn kho mực. |
 | `<ConfirmDialog>` & `<Toast>` | Hộp thoại xác nhận xóa/thu hồi/hủy mềm có ô nhập lý do bắt buộc (khi hủy phiếu/nhật ký mực) và thông báo góc trên phải tự tắt sau 3.5 giây. |
-| `<RequireRole>` | Ẩn hoàn toàn nút/tab/menu khi vai trò hiện tại không nằm trong `allowedRoles` (server vẫn kiểm tra độc lập). |
+| `<RequireRole>` | Ẩn hoàn toàn nút/tab/menu khi vai trò hiện tại không nằm trong `allowedRoles` (server vẫn kiểm tra độc lập). *(Ở Phase 2B khi chưa dựng `/login`, trang showcase UI Kit có thanh **Dev Role Switcher (`admin` / `technician` / `viewer`)** để kiểm thử và chụp ảnh nghiệm thu 3 vai trò tại `🔒 GATE 2B`.)* |
 | `<PrintHeader>` | Header chuẩn in khổ A4 ngang (Tên BV ĐKKV Long Khánh, Phòng CNTT, Tiêu đề báo cáo, Bộ lọc đang áp dụng, Thời điểm in, Người in) tự ẩn trên màn hình và tự hiện khi `@media print`. |
+| `<QrLabelPreview>` | Khung hiển thị tem tài sản kèm mã QR 100% offline (hỗ trợ chế độ lưới A4 `3×8` và tem nhiệt đơn `50×30mm`), được tái sử dụng bởi `QrPrintModal.tsx`. |
+| `<AppErrorBoundary>` | Khung bắt lỗi render toàn cục theo màu BVĐKKV Long Khánh (kèm nút `[🔄 Tải lại ứng dụng]`), kết hợp bắt `vite:preloadError` ở `main.tsx` để các máy trạm mở tab qua đêm tự reload mượt khi server cập nhật bản build mới. |
 
 ---
 
@@ -135,10 +139,10 @@ Toàn bộ WebApp nội bộ của Bệnh viện (QLTB CNTT hôm nay, và Báo c
 ### 4.4 Cụm Linh kiện (`/hardware`), Bàn giao (`/assignments`), Sửa chữa (`/repairs`), Máy in & Mực (`/printer-ink`), Quản trị (`/admin/*`)
 - **Cụm Linh kiện (`/hardware`):** 4 Tabs nội bộ (`Cá thể linh kiện`, `Mẫu phần cứng`, `Loại phần cứng`, `Gán / Gỡ linh kiện`), chuẩn Read-only `<DataTable>` + Modal, hiển thị Bảo hành sạch & Thiết bị đang gắn.
 - **Bàn giao (`/assignments`):** Bổ sung nút `[🔄 Luân chuyển]` (Modal chọn Khoa đích + Ngày chuyển + Ghi chú) và `[📄 Biên bản]` (xuất PDF Bàn giao/Thu hồi trực tiếp trong tab mới).
-- **Sửa chữa (`/repairs`):** Modal Tạo/Sửa chọn **nhiều linh kiện (tối đa 20)** có hiển thị badge Bảo hành ngay bên cạnh; Modal Biểu mẫu sửa chữa tự điền sẵn tên Lãnh đạo ký mặc định từ `SystemSettings`.
+- **Sửa chữa (`/repairs`):** Modal Tạo/Sửa chọn **nhiều linh kiện (tối đa 20)** có hiển thị badge Bảo hành ngay bên cạnh; khi chọn trạng thái `Hoàn tất (completed)` hiển thị checkbox 1-Click **"Tháo linh kiện hỏng trong phiếu khỏi máy & đánh dấu Tạm ngưng"** (`detachAndDeactivateUnits`); Modal Biểu mẫu sửa chữa tự điền sẵn tên Lãnh đạo ký mặc định từ `SystemSettings`.
 - **Máy in & Kho mực (`/printer-ink` — Phase 7):** 4 Tabs (`Danh sách Máy in & Cảnh báo + Bơm mực 1-Click`, `Nhật ký Dịch vụ & Hủy mềm`, `Kho Vật tư tô đỏ tồn âm`, `Phiếu nhập kho đơn giản theo Mã phiếu nhập`).
-- **Quản trị (`/admin/*` — chỉ `admin`):**
-  - `/admin/accounts`: Quản lý tài khoản, khóa/mở khóa, reset mật khẩu hiện 1 lần.
+- **Quản trị (`/admin/*` — chỉ `admin`) & Danh mục Nhân sự (`Users`):**
+  - `/admin/accounts` (hoặc Tab phụ `Nhân sự` trong `/departments`): Quản lý tài khoản đăng nhập (khóa/mở khóa, reset mật khẩu hiện 1 lần) liên thông với CRUD Danh mục Nhân sự (`dbo.Users`).
   - `/admin/settings`: 2 khối rõ ràng (*Người ký mặc định biểu mẫu in* & *Tổ chức / Ngưỡng cảnh báo bảo hành, Drum, Hộp mực*).
   - `/admin/audit-logs`: Lọc theo Ứng dụng (`appCode`), Tài khoản, Hành động, Khoảng thời gian.
 

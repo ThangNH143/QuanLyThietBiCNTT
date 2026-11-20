@@ -1,9 +1,9 @@
 # 3b. API-CONTRACTS.md — Đặc tả Giao ước REST API Server Đa-WebApp (`/api/v1/*`)
 
 > **Dự án:** Hệ thống Quản lý Thiết bị CNTT (`QuanLyThietBiCNTT`) — Nền tảng REST API Server BVĐKKV Long Khánh  
-> **Phiên bản:** 3.0 (**Lộ trình B**: Chuẩn hóa toàn bộ API dưới `/api/v1/core/*` dùng chung đa-WebApp và `/api/v1/itam/*` cho nghiệp vụ QLTB CNTT; hỗ trợ SPA React + SSO Cookie/CSRF + OpenAPI 3.1; hướng dẫn mở rộng cho WebApp tương lai)  
+> **Phiên bản:** 3.2 (Bổ sung API CRUD Danh mục Nhân sự `/api/v1/core/users` cho Admin, tùy chọn `detachAndDeactivateUnits` trong `PUT /api/v1/itam/repairs/:id`, tùy chọn `?delimiter=semicolon` khi xuất CSV cho máy Windows vùng `vi-VN`, và đồng bộ thẻ `{{placeholder}}` ngoặc kép)  
 > **Cập nhật lần cuối:** 2026-11-20  
-> **Xem thay đổi chi tiết tại:** `CHANGELOG.md` mục `[3.0.0-plan]`
+> **Xem thay đổi chi tiết tại:** `CHANGELOG.md` mục `[3.0.3-plan]`
 
 ---
 
@@ -64,7 +64,7 @@ Mọi endpoint API đều **thuần JSON (hoặc binary stream cho PDF/CSV)**, k
   - Khi ứng dụng khởi động, gọi `GET /api/v1/core/auth/csrf` lấy `{ csrfToken }` (lưu trong bộ nhớ RAM của JS, không lưu `localStorage`), và gắn Header `X-CSRF-Token` cho mọi `POST / PUT / PATCH / DELETE`.
 - **Chống ghi đè đồng thời (`rowVersion`):** `Devices`, `Repairs`, `DeviceAssignments` gửi `rowVersion` (chuỗi base64) trong body của `PUT` / `POST .../transfer`.
 - **Chống bấm đúp (`Idempotency-Key`):** Header `Idempotency-Key: <uuid>` bắt buộc cho `POST /api/v1/itam/devices/import/commit`, `POST /api/v1/itam/printer-ink/receipts`, và `POST /api/v1/itam/printer-ink/logs` (lưu cache khóa trong 5 phút trên server để trả lại kết quả cũ nếu bấm đúp).
-- **Xuất CSV & PDF:** CSV sinh phía server qua `server/src/shared/csv.js` (`Content-Type: text/csv; charset=utf-8`, BOM UTF-8, chống formula injection); PDF trả `Content-Type: application/pdf` (`Content-Disposition: inline; filename="..."`).
+- **Xuất CSV & PDF:** CSV sinh phía server qua `server/src/shared/csv.js` (`Content-Type: text/csv; charset=utf-8`, BOM UTF-8 `\uFEFF`, chống formula injection, mặc định dấu ngăn cách cột là dấu phẩy `,` và hỗ trợ tùy chọn `?delimiter=semicolon` xuất dấu `;` cho các máy trạm Windows đặt Regional Format `vi-VN`); PDF trả `Content-Type: application/pdf` (`Content-Disposition: inline; filename="..."`).
 - **Tài liệu OpenAPI 3.1:** Mọi endpoint mới/sửa phải cập nhật đồng bộ vào `server/docs/openapi.yaml` để các WebApp/Mobile client về sau tra cứu chuẩn xác 100%.
 
 ---
@@ -93,7 +93,9 @@ Mọi endpoint API đều **thuần JSON (hoặc binary stream cho PDF/CSV)**, k
 | `GET` | `/api/v1/core/departments` | `viewer` | Phân trang (`?page=&limit=&code=&name=&note=&isInactive=`) |
 | `GET` | `/api/v1/core/departments/dropdown` | `viewer` | `?includeId=` — Danh sách active cho Select |
 | `POST/PUT/PATCH/DELETE` | `/api/v1/core/departments[/:id][/toggle]` | `admin` | CRUD đầy đủ danh mục Khoa/Phòng dùng chung |
+| `GET` | `/api/v1/core/users` | `viewer` | Phân trang danh mục Nhân sự (`?page=&limit=&deptId=&search=&isInactive=`) |
 | `GET` | `/api/v1/core/users/dropdown` | `viewer` | `?deptCode=&includeId=` — Danh sách nhân sự dùng chung (mặc định lọc phòng CNTT khi truyền `deptCode=PCNTT` hoặc từ `SystemSettings`) |
+| `POST/PUT/PATCH` | `/api/v1/core/users[/:id][/toggle]` | `admin` | Thêm / Sửa / Đổi trạng thái Nhân sự (`dbo.Users`, tự sinh `Id` có `UPDLOCK/HOLDLOCK` nếu không truyền `id` từ HIS) |
 | `GET` | `/api/v1/core/settings` | `admin` | `?appCode=` — Lấy toàn bộ cấu hình trong `dbo.SystemSettings` |
 | `PUT` | `/api/v1/core/settings` | `admin` | `{ settings: [{ key, value }] }` — Cập nhật hàng loạt & xóa cache |
 | `GET` | `/api/v1/core/audit-logs` | `admin` | Phân trang (`?page=&limit=&appCode=&username=&action=&entityType=&startDate=&endDate=`) |
@@ -133,6 +135,23 @@ Mọi endpoint API đều **thuần JSON (hoặc binary stream cho PDF/CSV)**, k
 | `PATCH` | `/api/v1/itam/devices/:id/toggle` | `technician` | `{ rowVersion }` | Đổi `isInactive` |
 | `DELETE` | `/api/v1/itam/devices/:id` | `admin` | — | Xóa an toàn (`409` nếu có ràng buộc) |
 
+#### Đặc tả File CSV Nhập Hàng loạt Thiết bị (`/api/v1/itam/devices/import/*`)
+- **Định dạng file mẫu (`GET /import/template`):** CSV mã hóa UTF-8 có BOM (`\uFEFF`), dòng tiêu đề gồm **8 cột chuẩn**:
+  `code,name,deviceTypeCode,purchaseDate,warrantyDate,deptCode,hardwareSpec,note`
+- **Quy tắc từng cột:**
+  | Cột | Bắt buộc? | Quy tắc kiểm tra ở bước Dry-run (`POST /import/preview`) | Ví dụ |
+  |---|---|---|---|
+  | `code` | Có | Duy nhất trong file CSV và chưa tồn tại trong `dbo.Devices.code` (`≤ 50` ký tự) | `IN-KHOANOI-01` |
+  | `name` | Có | Không rỗng (`≤ 200` ký tự) | `Máy in Canon LBP 2900` |
+  | `deviceTypeCode` | Có | Phải khớp `dbo.DeviceTypes.code` đang active (`IN`, `MT`, `MB`, `SCAN`, `QR`, `TB`) | `IN` |
+  | `purchaseDate` | Có | Hỗ trợ `dd/MM/yyyy` hoặc `yyyy-MM-dd` | `20/11/2026` |
+  | `warrantyDate` | Không | Để trống hoặc ngày hợp lệ `≥ purchaseDate` (`dd/MM/yyyy` hoặc `yyyy-MM-dd`) | `20/11/2027` |
+  | `deptCode` | Không | Nếu có, phải khớp `dbo.Departments.code` đang active (tự tạo bản ghi `DeviceAssignments` bàn giao ngay) | `KNOI` |
+  | `hardwareSpec` | Không | Danh sách `<HardwareCode>:<Qty>` ngăn cách bằng dấu `;` (`Qty` từ `1..20`, mỗi `HardwareCode` khớp `dbo.Hardwares.code`) | `CPU-I3:1;RAM-8G:2;SSD-256:1` |
+  | `note` | Không | Chuỗi ghi chú (`≤ 200` ký tự) | `Nhập lô mới 2026` |
+- **Response của `POST /import/preview`:** `{ totalRows, validCount, errorCount, validRows: [...], errorRows: [{ rowNumber, raw, errors: string[] }] }` (tối đa `500` dòng/lần).
+- **Luồng quét QR trên điện thoại (`?profileId=<id>`):** Khi người dùng quét mã QR dẫn tới `/QuanLyThietBiCNTT/devices?profileId=<id>`: nếu chưa có phiên đăng nhập (`401`), React Router tự chuyển sang `/login?next=%2Fdevices%3FprofileId%3D<id>`; ngay sau khi đăng nhập thành công (kể cả tài khoản `viewer`), ứng dụng tự điều hướng về `/devices?profileId=<id>` và bật ngay Hồ sơ 360° ở chế độ hiển thị di động.
+
 ### 3.4 Bàn giao (`/api/v1/itam/assignments/*`) — Luân chuyển 1 Bước & Biên bản PDF
 | Method | Endpoint | Quyền | Request Body / Query | Ghi chú |
 |---|---|---|---|---|
@@ -141,12 +160,12 @@ Mọi endpoint API đều **thuần JSON (hoặc binary stream cho PDF/CSV)**, k
 | `PUT` | `/api/v1/itam/assignments/:id` | `technician` | `{ deptId, startDate, endDate, note, rowVersion }` | Kiểm `rowVersion` |
 | `PATCH` | `/api/v1/itam/assignments/:id/revoke` | `technician` | `{ endDate?, note?, rowVersion }` | Thu hồi giữ lịch sử |
 | `POST` | `/api/v1/itam/assignments/:id/transfer` | `technician` | `{ newDeptId, transferDate, note, rowVersion }` | Đóng bàn giao cũ & mở bàn giao mới trong 1 Transaction |
-| `GET` | `/api/v1/itam/assignments/:id/reports/handover/pdf` | `viewer` | — | Xuất PDF Biên bản Bàn giao qua LibreOffice Queue |
-| `GET` | `/api/v1/itam/assignments/:id/reports/revoke/pdf` | `viewer` | — | Xuất PDF Biên bản Thu hồi qua LibreOffice Queue |
+| `GET` | `/api/v1/itam/assignments/:id/reports/handover/pdf` | `viewer` | — | Xuất PDF Biên bản Bàn giao qua LibreOffice Queue (bộ thẻ `{{placeholder}}` theo `DATA-SCHEMA.md` 4.2) |
+| `GET` | `/api/v1/itam/assignments/:id/reports/revoke/pdf` | `viewer` | — | Xuất PDF Biên bản Thu hồi qua LibreOffice Queue (bộ thẻ `{{placeholder}}` theo `DATA-SCHEMA.md` 4.2) |
 | `DELETE` | `/api/v1/itam/assignments/:id` | `admin` | — | Xóa bản ghi nhập sai |
 
 ### 3.5 Sửa chữa (`/api/v1/itam/repairs/*`)
-- `GET /api/v1/itam/repairs` (`viewer`), `GET /:id` (`viewer`), `POST /` (`technician`, nhận `hardwareUnitIds: number[]` tối đa 20), `PUT /:id` (`technician`, kèm `rowVersion`), `DELETE /:id` (`technician`/`admin`, chỉ xóa phiếu `opened`).
+- `GET /api/v1/itam/repairs` (`viewer`), `GET /:id` (`viewer`), `POST /` (`technician`, nhận `hardwareUnitIds: number[]` tối đa 20), `PUT /:id` (`technician`, kèm `rowVersion` và cờ tùy chọn `detachAndDeactivateUnits?: boolean` — khi `status = 'completed'` và `detachAndDeactivateUnits = true`, tự động tháo các linh kiện hỏng trong phiếu khỏi máy và đặt `HardwareUnits.isInactive = 1` trong cùng 1 Transaction), `DELETE /:id` (`technician`/`admin`, chỉ xóa phiếu `opened`).
 - `GET /api/v1/itam/repairs/:id/report-detail` (`viewer` — tự điền tên người ký mặc định từ `SystemSettings` nếu phiếu mới chưa lưu), `PUT /api/v1/itam/repairs/:id/report-detail` (`technician`).
 - `GET /api/v1/itam/repairs/:id/reports/request/pdf` & `.../inspection/pdf` (`viewer` — hàng đợi 2 slot, đầy → `429`, nối nhiều linh kiện bằng `STRING_AGG`).
 

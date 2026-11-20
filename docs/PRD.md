@@ -3,9 +3,9 @@
 > **Dự án:** Hệ thống Quản lý Thiết bị CNTT (`QuanLyThietBiCNTT`) — Dự án Khung Nền tảng WebApp Bệnh viện  
 > **Đơn vị sử dụng:** Bệnh viện Đa khoa Khu vực Long Khánh (Phòng CNTT & các Khoa/Phòng)  
 > **Quy mô vận hành:** Mạng LAN nội bộ Bệnh viện (Đáp ứng mượt 20 → 200 người dùng đồng thời; kiến trúc mở rộng cho nhiều WebApp y tế về sau)  
-> **Phiên bản tài liệu:** 3.0 (Chốt **Lộ trình B**: tách **Express 5 Modular REST API Server** dùng chung đa-WebApp + **ReactJS/Vite/TypeScript SPA** 100% Offline LAN + **Hệ thống Giao diện Y tế Thống nhất BVĐKKV Long Khánh** tham khảo mẫu WebApp Báo cáo bệnh viện; giữ nguyên 100% nghiệp vụ & quyết định v2.6)  
+> **Phiên bản tài liệu:** 3.2 (Bổ sung CRUD Danh mục Nhân sự `dbo.Users` cho Admin, tùy chọn 1-Click tháo & khóa linh kiện hỏng khi hoàn tất Phiếu sửa chữa, tùy chọn xuất CSV `;` cho máy Windows vùng `vi-VN`, và `<AppErrorBoundary>` chống trắng trang khi deploy bản mới)  
 > **Cập nhật lần cuối:** 2026-11-20  
-> **Xem thay đổi chi tiết tại:** `CHANGELOG.md` mục `[3.0.0-plan]`
+> **Xem thay đổi chi tiết tại:** `CHANGELOG.md` mục `[3.0.3-plan]`
 
 ---
 
@@ -44,7 +44,7 @@ Từ phiên bản **v3.0 (Lộ trình B)**, chủ dự án định hướng khô
 - **Hiện trạng (`AS-IS-BASELINE.md` v1.0):** 9 module EJS đang vận hành ổn định trên Production nhưng chưa có đăng nhập/phân quyền và tồn tại các lỗi thật trong code/SP đã được ghi nhận (`G1–G19`).
 - **Nguyên tắc chuyển đổi v3.0:**
   1. **Tầng Database & Stored Procedures (Phase 1) tương thích ngược 100%** với ứng dụng EJS cũ (tag `pre-v3.0`) để bảo đảm quay lại tức thì nếu cần và tuyệt đối không mất dữ liệu (NFR-06, NFR-08).
-  2. **Ứng dụng v3.0 (`server/` + `client/`) phát triển sạch trên nhánh `feature/v3.0`** và DB `QuanLyThietBiCNTT_DEV`, chỉ chuyển đổi Production (Cutover) sau khi vượt qua toàn bộ 8 Cổng Nghiệm thu (`🔒 GATE 0 → 8`).
+  2. **Ứng dụng v3.0 (`server/` + `client/`) phát triển sạch trên nhánh `feature/v3.0`** và DB `QuanLyThietBiCNTT_DEV`, chỉ chuyển đổi Production (Cutover) sau khi vượt qua toàn bộ 11 Cổng Nghiệm thu (`🔒 GATE 0, 1A, 1B, 2A, 2B, 3, 4, 5, 6, 7, 8`).
   3. **Mọi Task & Phase đều có Báo cáo Nghiệm thu** kèm script/output thật và ảnh chụp màn hình đủ 3 vai trò.
 
 ### 1.3 Tiêu chí thành công
@@ -78,7 +78,7 @@ Hệ thống tách biệt **Danh mục Nhân sự bệnh viện (`Users`)** và 
 |---|---|---|---|---|---|---|
 | 1 | Đăng nhập / Đăng xuất / Đổi mật khẩu cá nhân | `/login` | `/api/v1/core/auth/*` | ✅ | ✅ | ✅ |
 | 2 | Dashboard Tổng quan & Trung tâm Báo cáo (4 Tabs) | `/`, `/reports/*` | `/api/v1/itam/dashboard/*` | 👁️ Xem + In/CSV | 👁️ Xem + In/CSV | 👁️ Xem + In/CSV |
-| 3 | Danh mục Phòng ban & Loại thiết bị (`isPrinter`) | `/departments`, `/device-types` | `/api/v1/core/departments`, `/api/v1/itam/device-types` | 👁️ Xem | 👁️ Xem | ✅ Toàn quyền |
+| 3 | Danh mục Phòng ban, Nhân sự (`Users`) & Loại thiết bị (`isPrinter`) | `/departments`, `/device-types` | `/api/v1/core/{departments,users}`, `/api/v1/itam/device-types` | 👁️ Xem | 👁️ Xem | ✅ Toàn quyền |
 | 4 | Thiết bị + Quick Config + Clone + Import + 360° + Tem QR | `/devices` | `/api/v1/itam/devices/*` | 👁️ Xem + 360° + In tem QR | ✅ Thêm/Sửa/Clone/Import/Toggle/QR | ✅ Toàn quyền (+ Xóa an toàn) |
 | 5 | Cụm Linh kiện (4 Tabs: Cá thể, Mẫu PC, Loại PC, Gán/Gỡ) | `/hardware` | `/api/v1/itam/hardware-*`, `/device-hardware` | 👁️ Xem | ✅ Thêm/Sửa/Toggle/Gán/Gỡ | ✅ Toàn quyền (+ Xóa an toàn) |
 | 6 | Bàn giao / **Luân chuyển 1 bước** / Thu hồi & **Biên bản PDF** | `/assignments` | `/api/v1/itam/assignments/*` | 👁️ Xem + In PDF | ✅ Gán mới / Sửa / Luân chuyển / Thu hồi / In PDF | ✅ Toàn quyền (+ Xóa lịch sử sai) |
@@ -92,7 +92,7 @@ Hệ thống tách biệt **Danh mục Nhân sự bệnh viện (`Users`)** và 
 
 ### 3.1 Lõi Dùng chung (`Core Platform`: Auth, Accounts, Settings, AuditLogs, Departments, Users)
 - **FR-AUTH-01..04:** Đăng nhập bằng `username` + `password` (`scrypt`); thông báo lỗi luôn chung; khóa tạm 15 phút theo tài khoản sau 5 lần sai; rate limit theo IP thật; phiên 8 giờ (`HttpOnly`, Touch Throttling 5 phút, không cache RAM); lấy CSRF token qua `GET /api/v1/core/auth/csrf` & trạng thái người dùng qua `GET /api/v1/core/auth/me`; bắt buộc đổi mật khẩu ở lần đầu/sau reset (`mustChangePassword = 1`); tự đổi mật khẩu cá nhân từ Header.
-- **FR-ACC-01..02:** Admin tạo tài khoản (gắn tối đa 1 tài khoản / 1 nhân sự `Users`), gán vai trò, khóa/mở khóa, reset mật khẩu (mật khẩu tạm chỉ hiển thị 1 lần). Tài khoản `admin` đầu tiên tạo bằng `scripts/seed-admin.js`.
+- **FR-ACC-01..02:** Admin tạo tài khoản (gắn tối đa 1 tài khoản / 1 nhân sự `Users`), gán vai trò, khóa/mở khóa, reset mật khẩu (mật khẩu tạm chỉ hiển thị 1 lần), và quản lý trực tiếp danh mục Nhân sự (`dbo.Users`: thêm/sửa/tạm ngưng nhân sự mới ngay trên Web, tự sinh `Id` an toàn khi không truyền mã từ HIS). Tài khoản `admin` đầu tiên tạo bằng `scripts/seed-admin.js`.
 - **FR-SET-01 (Cấu hình Hệ thống `/admin/settings`):** Admin quản lý `dbo.SystemSettings` (có cột `appCode` sẵn sàng cho cấu hình toàn cục `'global'` và theo từng app `'itam'`):
   - **Biểu mẫu in mặc định:** `default_director_name`, `default_finance_head_name`, `default_admin_head_name`, `default_it_rep_name`.
   - **Tổ chức:** `it_department_code` (mặc định `'PCNTT'`).
@@ -101,7 +101,7 @@ Hệ thống tách biệt **Danh mục Nhân sự bệnh viện (`Users`)** và 
 - **FR-AUDIT-01:** Tự động ghi `AuditLogs` (có `appCode`, IP máy trạm thật, không ghi mật khẩu/hash/token), lưu trữ 24 tháng, hỗ trợ lọc theo ứng dụng/tài khoản/hành động/thời gian.
 
 ### 3.2 Màn hình Trang chủ — Dashboard & Trung tâm Báo cáo Đa chiều (`/`)
-- **FR-DASH-01 (Tổng quan KPI & Cảnh báo):** 4 thẻ KPI theo view `vw_DeviceCurrentStatus` (`totalDevices`, `assignedDevices`, `availableDevices`, `activeRepairs`, phụ đề `inactiveDevices`) + thẻ cảnh báo bảo hành & phiếu sửa chữa tồn đọng + máy in cần chú ý + lối tắt nhanh.
+- **FR-DASH-01 (Tổng quan KPI & Cảnh báo):** **5 thẻ KPI** trên hàng đầu theo view `vw_DeviceCurrentStatus` (`totalDevices` kèm phụ đề `inactiveDevices`, `assignedDevices`, `availableDevices`, `activeRepairs`, `expiringWarranties`) + 2 khối cảnh báo bên dưới (phiếu sửa chữa tồn đọng, máy in cần chú ý & phân bố theo loại thiết bị).
 - **FR-DASH-02 (Báo cáo Tình trạng Sử dụng Thiết bị):** Bộ lọc đa chiều theo mẫu WebApp Báo cáo bệnh viện → Ma trận Khoa/Phòng × Loại máy + Danh sách chi tiết + **🖨️ In báo cáo** (A4 ngang, tối đa 5.000 dòng) + **📥 Xuất Excel (CSV UTF-8)**.
 - **FR-DASH-03 (Báo cáo Sửa chữa theo Thời gian & Loại máy):** Tổng ca, tổng giờ sửa (`COALESCE(actualRepairHours, expectedRepairHours)`), tổng chi phí dự kiến (`estimatedCost`) + In & Xuất CSV.
 - **FR-DASH-04 (Báo cáo Máy in & Sử dụng Vật tư Mực — Phase 7):** Lọc thời gian/Khoa/Vật tư → thống kê bơm mực, thay Drum/Hộp mực và tổng vật tư tiêu hao + In & Xuất CSV.
@@ -120,7 +120,7 @@ Hệ thống tách biệt **Danh mục Nhân sự bệnh viện (`Users`)** và 
 - **FR-ASG-01..03:** Gán mới (chặn trùng active), Sửa (`rowVersion`), Thu hồi (giữ lịch sử), Xóa (`admin`), **Luân chuyển 1 bước (`Khoa A → Khoa B`)** trong 1 Transaction, và **In Biên bản Bàn giao / Thu hồi (DOCX → PDF)** qua LibreOffice.
 
 ### 3.6 Màn hình Sửa chữa & Xuất PDF (`/repairs`)
-- **FR-REP-01..04:** Hỗ trợ **nhiều linh kiện (tối đa 20)** qua `RepairHardwareUnits`, badge Bảo hành, tự động điền tên người ký mặc định từ `SystemSettings` & gợi ý nhân sự theo `it_department_code`, xuất 2 mẫu PDF chuẩn Khoa/Phòng tại ngày hỏng + gộp nhiều linh kiện bằng `STRING_AGG` qua hàng đợi 2 slot.
+- **FR-REP-01..04:** Hỗ trợ **nhiều linh kiện (tối đa 20)** qua `RepairHardwareUnits`, badge Bảo hành, tùy chọn **1-Click *"Tháo linh kiện hỏng khỏi máy & đánh dấu Tạm ngưng"* ngay khi chuyển phiếu sang `Hoàn tất (completed)`** (chạy trong 1 Transaction để kho linh kiện luôn sạch), tự động điền tên người ký mặc định từ `SystemSettings` & gợi ý nhân sự theo `it_department_code`, xuất 2 mẫu PDF chuẩn Khoa/Phòng tại ngày hỏng + gộp nhiều linh kiện bằng `STRING_AGG` qua hàng đợi 2 slot.
 
 ### 3.7 Module Mới: Quản lý Máy in, Phiếu nhập Mực & Bơm mực (`/printer-ink` — Phase 7)
 - **FR-PRT-01..03:** Nhận diện qua `DeviceTypes.isPrinter = 1`, 1-click ghi nhận Bơm/Thay mực (`pageCounter`), bộ đếm tính lại từ nhật ký theo ngưỡng `SystemSettings`, Phiếu nhập kho đơn giản (`receiptCode` duy nhất), sổ cái `PrinterStockMovements`, cho phép tồn âm tô đỏ, hủy mềm kèm lý do.
@@ -132,7 +132,7 @@ Hệ thống tách biệt **Danh mục Nhân sự bệnh viện (`Users`)** và 
 ### 4.1 Yêu cầu Phi chức năng (NFR)
 | Mã | Yêu cầu | Tiêu chí nghiệm thu |
 |---|---|---|
-| NFR-01 | Hiệu năng | 100–200 người dùng thao tác: p95 API danh sách/báo cáo **< 500 ms**, 0 lỗi 5xx (`ARCHITECTURE.md` 2.6) |
+| NFR-01 | Hiệu năng | 100–200 người dùng thao tác: p95 API danh sách/báo cáo **< 500 ms**, 0 lỗi 5xx (`ARCHITECTURE.md` 2.3 & 6) |
 | NFR-02 | Vận hành offline 100% | **0 request ra Internet/CDN** (kể cả Font tiếng Việt, Icons, QRCode, Swagger UI nội bộ) |
 | NFR-03 | Sao lưu & Phục hồi | Backup hằng ngày + đã **thử restore thành công** ra `_DEV` trước Phase 1 |
 | NFR-04 | Bảo mật | Checklist OWASP Top 10, `scrypt`, `HttpOnly` cookie + CSRF, `rowVersion`, `qltb_app` chỉ `EXECUTE`, `npm audit` sạch `high/critical` |

@@ -1,9 +1,9 @@
 # IMPLEMENTATION-PLAN.md — Kế hoạch Triển khai Nền tảng v3.0 (API Server + React SPA) theo Giai đoạn & Cổng Nghiệm thu
 
 > **Dự án:** Hệ thống Quản lý Thiết bị CNTT (`QuanLyThietBiCNTT`) — Khung Nền tảng WebApp BVĐKKV Long Khánh  
-> **Phiên bản:** 5.1 (Bổ sung **Phụ lục A**: Bảng chọn Model Gemini 4 không dùng Carbon, lệnh `/` và mẫu câu mở đoạn chat riêng cho 11 chặng `Phase 0 → 8`, 4 loại nhiệm vụ ngoài kế hoạch & chế độ `Orchestrator` `/teamwork`)  
+> **Phiên bản:** 5.3 (Bổ sung CRUD Danh mục Nhân sự `dbo.Users`, tùy chọn 1-Click tháo & khóa linh kiện hỏng khi hoàn tất Phiếu sửa chữa `@pDetachAndDeactivateUnits`, `<AppErrorBoundary>` + `vite:preloadError`, tùy chọn CSV `;` cho máy vùng `vi-VN`, cờ `-env:UserInstallation` cho LibreOffice và Graceful Shutdown 15s)  
 > **Cập nhật lần cuối:** 2026-11-20  
-> **Xem thay đổi chi tiết tại:** `CHANGELOG.md` mục `[3.0.1-plan]`
+> **Xem thay đổi chi tiết tại:** `CHANGELOG.md` mục `[3.0.3-plan]`
 
 ---
 
@@ -42,17 +42,25 @@ flowchart LR
 
 > **Lưu ý:** Khảo sát hiện trạng (`AS-IS-BASELINE.md` v1.0) và 2 script chỉ đọc `scripts/baseline/export-schema.sql`, `preflight-checks.sql` đã sẵn sàng.
 
-### T0.1 — Tạo DB DEV, Login phân quyền & Tag Git `pre-v3.0` *(chủ dự án thực hiện, AI hướng dẫn)*
-- **Làm:** (1) Backup Production `QuanLyThietBiCNTT` và kiểm tra file backup; (2) Restore ra `QuanLyThietBiCNTT_DEV`; (3) Tạo 2 SQL login trên DEV: `qltb_migrator` (`db_owner`) và `qltb_app` (chỉ `EXECUTE` trên `dbo` + CRUD riêng trên `dbo.Sessions`); (4) Tạo Git tag `pre-v3.0` (bảo toàn nguyên bản EJS cũ để rollback) và nhánh `feature/v3.0`.
-- **Nghiệm thu:** Output so sánh `rowCounts` 12 bảng Prod vs DEV (khớp 100%); output kết nối 2 login; output `git tag` & `git branch`.
+### T0.1 — Chuẩn bị Git/PATH, Đổi mật khẩu SQL cũ, Tạo DB DEV, Login phân quyền & Tag Git `pre-v3.0` *(chủ dự án thực hiện, AI hướng dẫn)*
+- **Làm:**
+  0. **Chuẩn bị Git & Bảo mật tiên quyết:** (a) Đảm bảo `C:\Program Files\Git\cmd` có trong `PATH` của máy để chạy `git status/diff`; (b) Kiểm tra trên máy chủ Production đã có file `.env` đầy đủ thông tin kết nối DB, sau đó đổi mật khẩu SQL login cũ (do lịch sử commit trước đây từng lưu mật khẩu trong `ecosystem.config.cjs`); (c) Commit bộ tài liệu thiết kế v3.0 và `ecosystem.config.cjs` đã làm sạch (`docs: finalize v3.0 architecture and scrub plaintext credentials`).
+  1. Backup Production `QuanLyThietBiCNTT` và kiểm tra file backup (`RESTORE VERIFYONLY`).
+  2. Restore ra `QuanLyThietBiCNTT_DEV`.
+  3. Tạo 2 SQL login trên DEV: `qltb_migrator` (`db_owner`) và `qltb_app` (chỉ `EXECUTE` trên `dbo` + CRUD riêng trên `dbo.Sessions` + quyền `EXECUTE` trên 3 Table Types `tt_*`).
+  4. Tạo Git tag `pre-v3.0` (bảo toàn nguyên bản EJS cũ để rollback) và chuyển sang nhánh `feature/v3.0`.
+- **Nghiệm thu:** Output so sánh `rowCounts` 12 bảng Prod vs DEV (khớp 100%); output kết nối 2 login; output `git tag` & `git branch`; `self-audit.mjs --all` = `0` findings.
 
 ### T0.2 — Xuất nguyên trạng DB DEV vào `db/sql/baseline/`
 - **Tạo/Sửa:** `db/sql/baseline/*` (chỉ đọc).
 - **Nghiệm thu:** Đầy đủ bản xuất cấu trúc bảng & 40+ SP hiện hữu khớp 100% `docs/AS-IS-BASELINE.md`.
 
-### T0.3 — Xây dựng Runner Migration `scripts/migrate.js`, `.env.example` & Root `package.json` Scripts
-- **Đọc:** `ARCHITECTURE.md` 4–5; `DATA-SCHEMA.md` 2.1 (#6). **Tạo/Sửa:** `scripts/migrate.js`, `.env.example`, cập nhật script quản lý.
-- **Làm:** Chạy `db/sql/migrations/V*.sql` theo thứ tự với `SchemaVersions` + SHA-256 (từ chối sửa file đã chạy) trong transaction; chạy `db/sql/procedures/*.sql` tách theo `GO`. Guard cứng từ chối nếu `DB_DATABASE` không kết thúc `_DEV` trừ khi có `--prod --backup-confirmed`.
+### T0.3 — Xây dựng Runner Migration `scripts/migrate.js`, `.env.example` & Root `package.json` (`npm workspaces`)
+- **Đọc:** `ARCHITECTURE.md` 3.4, 4, 5, 5.1; `DATA-SCHEMA.md` 2.1 (#6). **Tạo/Sửa:** `scripts/migrate.js`, `.env.example`, cập nhật `package.json` gốc (`"workspaces": ["server", "client"]` + scripts `migrate`, `seed:admin`, `dev`, `build`, `test`, `audit:self`).
+- **Làm:**
+  - `scripts/migrate.js` tự động **bootstrap** bảng `dbo.SchemaVersions` (`IF OBJECT_ID(N'dbo.SchemaVersions', N'U') IS NULL CREATE TABLE ...`) trước khi duyệt `db/sql/migrations/V*.sql` theo thứ tự với SHA-256 (từ chối nếu file đã chạy bị sửa) trong transaction — nhờ đó ngay cả `V001` cũng được ghi vào `SchemaVersions` ở lần chạy đầu tiên.
+  - Sau khi hoàn tất `migrations/`, chạy toàn bộ `db/sql/procedures/*.sql` tách theo `GO`.
+  - Guard cứng từ chối nếu `DB_DATABASE` không kết thúc `_DEV` trừ khi có `--prod --backup-confirmed`.
 - **Nghiệm thu:** Output test 3 tình huống (chạy `_DEV` thành công, từ chối non-`_DEV`, báo lỗi sai checksum).
 
 ### 🔒 GATE 0 (`docs/acceptance/PHASE-0-REPORT.md`)
@@ -84,9 +92,10 @@ flowchart LR
 - **Tạo/Sửa:** `db/sql/migrations/V005__assignments_repairs_constraints.sql`.
 - **Nghiệm thu:** Test `ROLLBACK` chặn gán active trùng và chặn `status` sai; `DeviceAssignments = 415`.
 
-### T1.6 — `V006` & `V007`: 7 Bảng Máy in/Mực + Toàn bộ Non-Clustered Indexes
+### T1.6 & T1.7 (Gộp) — `V006` & `V007`: 7 Bảng Máy in/Mực + Toàn bộ Non-Clustered Indexes
+- **Đọc:** `DATA-SCHEMA.md` 2.4 (#18–24) & Mục 3. *(Lưu ý: `T1.6` tạo `V006` và `T1.7` tạo `V007` được gộp thực hiện chung trong bước này để kiểm tra đồng bộ toàn bộ 24 bảng & indexes trước khi đóng Gate 1A.)*
 - **Tạo/Sửa:** `db/sql/migrations/V006__printer_ink_tables.sql`, `db/sql/migrations/V007__indexes.sql`.
-- **Nghiệm thu:** `sys.tables` đủ 24 bảng; `sys.indexes` đủ index mới (gồm `AuditLogs(appCode, createdAt DESC)`); chạy lại `migrate.js` skip sạch.
+- **Nghiệm thu:** `sys.tables` đủ 24 bảng đúng 100% kiểu dữ liệu & `CHECK` constraint trong `DATA-SCHEMA.md`; `sys.indexes` đủ index mới (gồm `AuditLogs(appCode, createdAt DESC)`); chạy lại `migrate.js` skip sạch.
 
 ### 🔒 GATE 1A (`docs/acceptance/PHASE-1A-REPORT.md`)
 - Đối chiếu `rowCounts` 12 bảng gốc (0 mất dữ liệu); chứng minh code EJS cũ `pre-v3.0` vẫn chạy bình thường trên DB DEV sau `V001–V007`.
@@ -96,10 +105,10 @@ flowchart LR
 ## PHASE 1B — Chuẩn hóa Toàn bộ Stored Procedures & Kiểm thử SQL (Trên DEV)
 
 ### T1.8 — SP Danh mục nền (`02_sp_master_data.sql`) + Test SQL
-- `Departments` (thêm `@pCodeSearch`), `DeviceTypes` (`isPrinter`), `HardwareTypes`, `Hardwares`, `Users` dropdown (lọc theo `SystemSettings.it_department_code`); test `db/tests/02_master_data.test.sql` (`ROLLBACK`).
+- `Departments` (thêm `@pCodeSearch`), `DeviceTypes` (`isPrinter`), `HardwareTypes`, `Hardwares`, `Users` (`sp_Users_GetPaged/GetDropdown/Create/Update/ToggleStatus`, tự sinh `Id` có `UPDLOCK/HOLDLOCK` khi `@pId IS NULL`, lọc dropdown theo `SystemSettings.it_department_code`); mọi SP `_Delete` kiểm tra khóa ngoại trực tiếp bằng `IF EXISTS (...) THROW 50009` (bỏ Dynamic SQL `sp_CheckRecordReference`); test `db/tests/02_master_data.test.sql` (`ROLLBACK`).
 
 ### T1.9 — View `vw_DeviceCurrentStatus` + SP Thiết bị Đọc/Xóa/360° (`03_sp_devices_units.sql` phần 1)
-- View 4 trạng thái + `warrantyStatus`; `sp_Devices_GetPaged`, `sp_Devices_GetProfile360` (5 recordsets), sửa `sp_Devices_Delete`; test `db/tests/03_devices_read.test.sql`.
+- View 4 trạng thái + `warrantyStatus`; `sp_Devices_GetPaged`, `sp_Devices_GetProfile360` (5 recordsets), sửa `sp_Devices_Delete` (kiểm tra ràng buộc trên `Devices_HardwareUnits`, `DeviceAssignments`, `Repairs`, `PrinterProfiles`, `PrinterServiceLogs`); test `db/tests/03_devices_read.test.sql`.
 
 ### T1.10 — SP `sp_Devices_SaveWithQuickConfig` (`03_sp_devices_units.sql` phần 2)
 - Hỗ trợ `@pWarrantyDate`, TVP `tt_HardwareItem`, chỉ bổ sung không tự gỡ, sinh mã `UPDLOCK/HOLDLOCK`, kiểm `rowVersion`; test đủ 7 kịch bản `db/tests/03_devices_quick_config.test.sql`.
@@ -110,8 +119,8 @@ flowchart LR
 ### T1.12 — SP Bàn giao, Luân chuyển 1 Bước & Dữ liệu In Biên bản (`04_sp_assignments.sql`)
 - `Create`/`Update`/`Revoke`/`Transfer` (1 Transaction đóng cũ + mở mới) + `GetPrintDataById` (`STRING_AGG` + người ký mặc định từ `SystemSettings`); test `db/tests/04_assignments.test.sql`.
 
-### T1.13 — SP Sửa chữa Nhiều Linh kiện & Dữ liệu In PDF (`05_sp_repairs_print.sql`)
-- `Create`/`Update` (TVP `tt_IdList` → `RepairHardwareUnits`, `rowVersion`), `Delete` (xóa tường minh, chỉ `opened`), `GetPrintDataById` (`OUTER APPLY` theo `brokenDate` + `STRING_AGG`), `GetSurveyUsers` (dùng `it_department_code`); test `db/tests/05_repairs.test.sql`.
+### T1.13 — SP Sửa chữa Nhiều Linh kiện, 1-Click Tháo Linh kiện Hỏng & Dữ liệu In PDF (`05_sp_repairs_print.sql`)
+- `Create`/`Update` (TVP `tt_IdList` → `RepairHardwareUnits`, `rowVersion`, tham số cuối `@pDetachAndDeactivateUnits BIT = 0` tự tháo linh kiện hỏng khỏi máy & đặt `HardwareUnits.isInactive = 1` trong 1 Transaction khi hoàn tất), `Delete` (xóa tường minh, chỉ `opened`), `GetPrintDataById` (`OUTER APPLY` theo `brokenDate` + `STRING_AGG`), `GetSurveyUsers` (dùng `it_department_code`); test `db/tests/05_repairs.test.sql`.
 
 ### T1.14 — SP Core Auth, Accounts, SystemSettings, AuditLogs, Dashboard & Báo cáo (`06_sp_auth_audit_dash.sql`)
 - `sp_Auth_*`, `sp_Accounts_*`, `sp_SystemSettings_GetAll/Upsert` (hỗ trợ `@pAppCode`), `sp_AuditLogs_Create/GetPaged/Purge` (hỗ trợ `@pAppCode`), `sp_Dashboard_GetSummary`, `sp_Reports_DeviceUsage`, `sp_Reports_RepairSummary`; test `db/tests/06_auth_reports.test.sql`.
@@ -132,15 +141,15 @@ flowchart LR
 - **Nghiệm thu:** Test 20 request liên tiếp → `UPDATE Sessions` chạy ≤ 1 lần; xóa session trong DB → request tiếp theo bị `401` ngay lập tức.
 
 ### T2.3 — Bộ `shared/` Chuẩn (`apiResponse`, `AppError`, `asyncHandler`, `pagination`, `csv`) & Middleware (`validate`, `errorHandler`)
-- **Tạo:** `server/src/shared/{apiResponse,AppError,asyncHandler,pagination,csv}.js`, `server/src/middleware/{validate,errorHandler}.js`, `server/tests/shared/{errorHandler,csv}.test.js`.
-- **Nghiệm thu:** `node --test` kiểm đủ HTTP `400/401/403/404/409(BUSINESS)/409(CONCURRENT)/429/500` (ẩn stack 500) và CSV BOM UTF-8 + chống formula injection.
+- **Tạo:** `server/src/shared/{apiResponse,AppError,asyncHandler,pagination,csv}.js` (`pagination.js` có `extractPagedRecordsets` xử lý cả 2 chiều recordset; `csv.js` xuất UTF-8 BOM mặc định dấu `,` và hỗ trợ `?delimiter=semicolon`), `server/src/middleware/{validate,errorHandler}.js`, `server/tests/shared/{errorHandler,csv}.test.js`.
+- **Nghiệm thu:** `node --test` kiểm đủ HTTP `400/401/403/404/409(BUSINESS)/409(CONCURRENT)/429/500` (ẩn stack 500) và CSV BOM UTF-8 (cả `,` và `;`) + chống formula injection.
 
 ### T2.4 — Bảo mật SPA: `authMiddleware` (Auth Adapter), `csrfMiddleware`, `rateLimiter` & `auditLogService`
 - **Tạo:** `server/src/middleware/{authMiddleware,csrfMiddleware,rateLimiter}.js`, `server/src/modules/core/audit-logs/auditLog.service.js`, `server/tests/security.test.js`.
 - **Nghiệm thu:** Test thiếu CSRF → `403`, `viewer` gọi POST → `403`, chưa login → `401`, audit tự lọc bỏ `password`/`token` và gắn đúng `appCode`.
 
-### T2.5 — Khung `server/src/app.js`, `server.js`, `/api/v1/healthz`, OpenAPI 3.1, `web.config` & `ecosystem.config.cjs`
-- **Tạo/Sửa:** `server/src/{app.js,server.js}`, `server/src/modules/core/{index.js,health/*}`, `server/docs/openapi.yaml`, `web.config` (bỏ `iisnode` & `maxConcurrentRequests=1`), `ecosystem.config.cjs` (PM2 fork, 0 mật khẩu).
+### T2.5 — Khung `server/src/app.js`, `server.js` (Graceful Shutdown 15s), `/api/v1/healthz`, OpenAPI 3.1, `web.config` & `ecosystem.config.cjs`
+- **Tạo/Sửa:** `server/src/{app.js,server.js}` (kèm Graceful Shutdown 15s đóng HTTP server & `pool.close()`), `server/src/modules/core/{index.js,health/*}`, `server/docs/openapi.yaml`, `web.config` (bỏ `iisnode` & `maxConcurrentRequests=1`), `ecosystem.config.cjs` (PM2 fork, 0 mật khẩu).
 - **Nghiệm thu:** `GET /api/v1/healthz` → `200 { status: "ok", db: "connected" }`; kiểm `req.ip` sau proxy; `self-audit.mjs` = `0` findings.
 
 ### 🔒 GATE 2A (`docs/acceptance/PHASE-2A-REPORT.md`)
@@ -151,20 +160,27 @@ flowchart LR
 ## PHASE 2B — Nền tảng Frontend: `client/` React + Vite + TypeScript & BVĐKKV Long Khánh Design System
 
 ### T2.6 — Khởi tạo `client/` (React 19 + Vite + TypeScript + Tailwind CSS + 100% Offline Fonts/Icons/QR)
-- **Tạo:** `client/package.json`, `client/vite.config.ts` (`base: VITE_BASE_PATH`, proxy `/api`), `client/tsconfig.json`, `client/index.html` (0 CDN), `client/src/main.tsx` (font WOFF2 `@fontsource`), `client/src/design-system/tokens.css` (bảng màu chuẩn BVĐKKV Long Khánh `#00548F`/`#005A9C`/`#0B8A5C`/`#F4F7FA`).
+- **Tạo:** `client/package.json` (theo bảng Approved Dependencies tại `ARCHITECTURE.md` 3.4), `client/vite.config.ts` (`base: VITE_BASE_PATH`, proxy Linh hoạt Kép `'/QuanLyThietBiCNTT/api'` & `'/api'` → `http://localhost:3000`), `client/tsconfig.json`, `client/index.html` (0 CDN), `client/src/main.tsx` (font WOFF2 `@fontsource`), `client/src/design-system/tokens.css` (bảng màu chuẩn BVĐKKV Long Khánh `#00548F`/`#005A9C`/`#0B8A5C`/`#F4F7FA`).
 - **Nghiệm thu:** `npm run typecheck` & `npm run build` PASS (`0` lỗi); `self-audit.mjs` xác nhận `0` link CDN/Google Fonts; Express phục vụ được `client/dist/` dưới sub-path `/QuanLyThietBiCNTT/`.
 
-### T2.7 — Xây dựng `<HospitalShell>` & Bộ Component Dùng Chung Đa-WebApp (`client/src/design-system/`)
-- **Đọc:** `UI-DESIGN.md` Mục 1–3.
-- **Tạo:** `HospitalShell.tsx` (Sidebar trái xanh `#00548F` + Logo BV ĐKKV Long Khánh + User Card + Accordion Menu + Footer PCNTT; Topbar gạch dọc xanh `#005A9C` + nút Đăng xuất đỏ), `FilterCard.tsx`, `DataTable.tsx` (Header xanh `#005A9C`, sticky column, **empty/loading căn giữa viewport**, pagination), `Modal.tsx`, `ConfirmDialog.tsx`, `StatusBadge.tsx`, `SearchableSelect.tsx`, `Toast.tsx`, `RequireRole.tsx`, `PrintHeader.tsx`.
-- **Nghiệm thu:** **Ảnh chụp** giao diện khung chuẩn trên Desktop `≥ 1366px` (đối chiếu trực tiếp phong cách mẫu WebApp Báo cáo BV ĐKKV Long Khánh), ảnh thu gọn sidebar, ảnh bảng nhiều cột có empty state căn giữa, ảnh DevTools Console `0` lỗi & Network `0` CDN ngoài Internet.
+### T2.7 — Xây dựng `<HospitalShell>` & Bộ 15 Component Dùng Chung Đa-WebApp (`client/src/design-system/`)
+- **Đọc:** `UI-DESIGN.md` Mục 1–3; `ARCHITECTURE.md` 3.2 & 5.
+- **Tạo:**
+  - `client/src/design-system/layout/`: `HospitalShell.tsx`, `Sidebar.tsx`, `Topbar.tsx` (Sidebar trái xanh `#00548F` + Logo BV ĐKKV Long Khánh + User Card + Accordion Menu + Footer PCNTT; Topbar gạch dọc xanh `#005A9C` + nút Đăng xuất đỏ).
+  - `client/src/design-system/components/`: `PageHeader.tsx`, `FilterCard.tsx`, `DataTable.tsx` (Header xanh `#005A9C`, sticky column, **empty/loading căn giữa viewport**), `Pagination.tsx`, `Modal.tsx`, `Drawer.tsx`, `ConfirmDialog.tsx`, `StatusBadge.tsx`, `SearchableSelect.tsx`, `DateInput.tsx`, `Toast.tsx`, `RequireRole.tsx`, `PrintHeader.tsx`, `QrLabelPreview.tsx`, `AppErrorBoundary.tsx` (kèm bắt `vite:preloadError` ở `main.tsx`).
+  - Trang Showcase UI Kit mẫu kèm thanh **Dev Role Switcher (`admin` / `technician` / `viewer`)** để kiểm chứng trực quan `<RequireRole>` và toàn bộ 15 component trước khi xây `/login` ở Phase 3.
+- **Nghiệm thu:** **Ảnh chụp** giao diện khung chuẩn trên Desktop `≥ 1366px` (đối chiếu trực tiếp phong cách mẫu WebApp Báo cáo BV ĐKKV Long Khánh), ảnh thu gọn sidebar, ảnh bảng nhiều cột có empty state căn giữa, ảnh 3 chế độ `admin`/`technician`/`viewer` qua Dev Role Switcher, ảnh DevTools Console `0` lỗi & Network `0` CDN ngoài Internet.
 
-### T2.8 — Tầng Giao tiếp API (`apiClient.ts`, `authContext.tsx`, `formatters.ts`, `qrLabel.ts`) & Đo Tải Nền API (`T2.9`)
-- **Tạo:** `client/src/shared/{apiClient.ts,authContext.tsx,formatters.ts,qrLabel.ts,types.ts}`, `scripts/loadtest/baseline.js`.
-- **Nghiệm thu:** Test tự gắn `X-CSRF-Token`, tự xử lý `401`/`403 PASSWORD_CHANGE_REQUIRED`/`409 CONCURRENT_MODIFICATION`; lưu mốc đo tải nền 50/100/200 kết nối vào `CHANGELOG.md`.
+### T2.8 — Tầng Giao tiếp API (`apiClient.ts`, `authContext.tsx`, `formatters.ts`, `qrLabel.ts`, `types.ts`)
+- **Tạo:** `client/src/shared/{apiClient.ts,authContext.tsx,formatters.ts,qrLabel.ts,types.ts}`, unit tests `vitest`.
+- **Nghiệm thu:** Test tự ghép `${import.meta.env.BASE_URL}api/v1/...`, tự gắn `X-CSRF-Token`, tự xử lý `401` (kèm `?next=` cho deep-link QR di động), `403 PASSWORD_CHANGE_REQUIRED`, `409 CONCURRENT_MODIFICATION`.
+
+### T2.9 — Kịch bản Đo Tải Nền API (`scripts/loadtest/baseline.js`)
+- **Tạo:** `scripts/loadtest/baseline.js`.
+- **Nghiệm thu:** Chạy đo tải nền 50/100/200 kết nối đồng thời tới `/api/v1/healthz` & endpoint đọc mẫu trên DEV, lưu mốc p50/p95/RPS vào `docs/acceptance/PHASE-2B-REPORT.md` và `CHANGELOG.md`.
 
 ### 🔒 GATE 2B (`docs/acceptance/PHASE-2B-REPORT.md`)
-- **Nghiệm thu trực quan Bộ UI/UX BVĐKKV Long Khánh** trước khi code các màn hình nghiệp vụ: ảnh chụp `<HospitalShell>` + toàn bộ component mẫu + DevTools Network `0` CDN + xác nhận `design-system/` độc lập 100% không phụ thuộc `features/`. Chờ duyệt mở Phase 3.
+- **Nghiệm thu trực quan Bộ UI/UX BVĐKKV Long Khánh** trước khi code các màn hình nghiệp vụ: ảnh chụp `<HospitalShell>` + toàn bộ 14 component mẫu (3 vai trò qua Dev Role Switcher) + DevTools Network `0` CDN + xác nhận `design-system/` độc lập 100% không phụ thuộc `features/` + mốc đo tải nền `T2.9`. Chờ duyệt mở Phase 3.
 
 ---
 
@@ -189,9 +205,9 @@ flowchart LR
 
 ## PHASE 4 — Danh mục Nền (`Departments`, `DeviceTypes`) & Cụm 4 Tab Linh kiện (`/hardware`)
 
-### T4.1 — Khoa/Phòng (`/api/v1/core/departments`) & Loại Thiết bị (`/api/v1/itam/device-types` + `isPrinter`)
-- **Tạo:** `server/src/modules/core/departments/*`, `server/src/modules/core/users/*`, `server/src/modules/itam/device-types/*`, `client/src/features/master-data/{DepartmentsPage,DeviceTypesPage}.tsx`, tests API.
-- **Nghiệm thu:** Test lọc `code`, bật `isPrinter` chỉ `admin`, kiểm `403` cho `technician`/`viewer`; **ảnh chụp** bảng & Modal ở quyền `admin` và `viewer`.
+### T4.1 — Khoa/Phòng (`/api/v1/core/departments`), Nhân sự (`/api/v1/core/users`) & Loại Thiết bị (`/api/v1/itam/device-types` + `isPrinter`)
+- **Tạo:** `server/src/modules/core/departments/*`, `server/src/modules/core/users/*` (CRUD + dropdown), `server/src/modules/itam/device-types/*`, `client/src/features/master-data/{DepartmentsPage,DeviceTypesPage}.tsx` (tích hợp Tab/Modal quản lý Nhân sự `dbo.Users`), tests API.
+- **Nghiệm thu:** Test lọc `code`, thêm Nhân sự tự sinh `Id`, bật `isPrinter` chỉ `admin`, kiểm `403` cho `technician`/`viewer`; **ảnh chụp** bảng & Modal ở quyền `admin` và `viewer`.
 
 ### T4.2 — Cụm 4 Tab Linh kiện (`/hardware`: Cá thể, Mẫu PC, Loại PC, Gán/Gỡ)
 - **Tạo:** `server/src/modules/itam/{hardware-types,hardwares,hardware-units,device-hardware}/*`, `client/src/features/hardware/*`, tests API.
@@ -223,17 +239,18 @@ flowchart LR
 
 ## PHASE 6 — Bàn giao / Luân chuyển 1 Bước + Biên bản PDF & Sửa chữa Nhiều Linh kiện + Hàng đợi PDF
 
-### T6.1 — Hàng đợi PDF Dùng Chung (`server/src/shared/docxReportService.js`) & Dọn File Tạm
-- **Tạo:** `server/src/shared/{docxReportService.js,cleanupTempReports.js}`, `templates/assignments/{handover-template.docx,revoke-template.docx}`, test song song 10 job PDF.
+### T6.1 — Hàng đợi PDF Dùng Chung (`server/src/shared/docxReportService.js`), Sinh 2 Mẫu Word Bàn giao/Thu hồi & Dọn File Tạm
+- **Đọc:** `ARCHITECTURE.md` 2.3; `DATA-SCHEMA.md` 4.2; `API-CONTRACTS.md` 3.4.
+- **Tạo:** `server/src/shared/{docxReportService.js,cleanupTempReports.js}` (dùng `delimiters: { start: '{{', end: '}}' }` và cờ `-env:UserInstallation=file:///...` cô lập 2 slot profile LibreOffice trên Windows), `templates/assignments/{handover-template.docx,revoke-template.docx}` *(AI tự sinh 2 file `.docx` theo đúng khung Quốc hiệu/Tiêu ngữ & Header BVĐKKV Long Khánh của `templates/repairs/*.docx` và bộ thẻ `{{placeholder}}` tại `DATA-SCHEMA.md` 4.2; chủ dự án có thể mở bằng Word tinh chỉnh câu chữ bất kỳ lúc nào)*, test song song 10 job PDF.
 - **Nghiệm thu:** Test 10 PDF song song qua 2 slot không treo/không rò rỉ tiến trình `soffice.exe`, job vượt ngưỡng queue trả `429`.
 
 ### T6.2 — Bàn giao (`/assignments`): `rowVersion`, Luân chuyển 1 Bước & Xuất Biên bản Bàn giao / Thu hồi PDF
 - **Tạo:** `server/src/modules/itam/assignments/*`, `client/src/features/assignments/*`, tests API.
 - **Nghiệm thu:** Test gán mới, gán trùng (`409`), luân chuyển Khoa A → Khoa B trong 1 transaction, thu hồi, `409 CONCURRENT_MODIFICATION`; **ảnh chụp** Modal Luân chuyển & **ảnh chụp file PDF** Biên bản Bàn giao / Thu hồi.
 
-### T6.3 — Sửa chữa (`/repairs`): Nhiều Linh kiện, Badge Bảo hành, Tự điền `SystemSettings` & 2 Mẫu PDF
+### T6.3 — Sửa chữa (`/repairs`): Nhiều Linh kiện, 1-Click Tháo Linh kiện Hỏng, Badge Bảo hành, Tự điền `SystemSettings` & 2 Mẫu PDF
 - **Tạo:** `server/src/modules/itam/repairs/*`, `client/src/features/repairs/*`, tests API.
-- **Nghiệm thu:** Test tạo phiếu 3 linh kiện, tự điền Lãnh đạo ký từ `SystemSettings`, xuất 2 mẫu PDF chuẩn Khoa/Phòng tại ngày hỏng + gộp nhiều linh kiện bằng `STRING_AGG`; **ảnh chụp** Modal tạo phiếu, Modal Biểu mẫu và **ảnh chụp 2 file PDF**.
+- **Nghiệm thu:** Test tạo phiếu 3 linh kiện, hoàn tất phiếu kèm `detachAndDeactivateUnits = true` tự tháo linh kiện hỏng khỏi máy & đặt `isInactive = 1`, tự điền Lãnh đạo ký từ `SystemSettings`, xuất 2 mẫu PDF chuẩn Khoa/Phòng tại ngày hỏng + gộp nhiều linh kiện bằng `STRING_AGG`; **ảnh chụp** Modal tạo phiếu, Modal Biểu mẫu và **ảnh chụp 2 file PDF**.
 
 ### 🔒 GATE 6 (`docs/acceptance/PHASE-6-REPORT.md`)
 - Smoke test khép kín vòng đời Thiết bị CNTT (Nhập → Bàn giao → Luân chuyển + Biên bản PDF → Sửa chữa nhiều linh kiện + 2 mẫu PDF → Thu hồi). Chờ duyệt mở Phase 7.
@@ -279,6 +296,7 @@ flowchart LR
 > **Nguyên tắc chọn Model (chỉ dùng nhóm Gemini 4, không dùng Carbon):**
 > - **`Gemini 4 Argon` & `Orchestrator (Argon)`:** mạnh nhất về tư duy kiến trúc, bảo mật & đối chiếu nhiều tầng — ưu tiên cho nền tảng DB/SP khó, Express API Core, BVĐKKV Design System, tính năng phức tạp & Audit cuối.
 > - **`Gemini 4 Neon` & `Gemini 4 Hydrogen` (`Medium` / `High` / `XHigh`):** tốc độ nhanh, quota hồi theo ngày — dùng làm lực lượng chủ lực cho triển khai code, CRUD, UI từng màn hình & kiểm thử.
+> - *(Lưu ý tên hiển thị trên thanh chọn Model của IDE: tùy phiên bản Antigravity, tên model có thể hiển thị là `Gemini 4 Argon / Neon / Hydrogen` hoặc các model tương đương cùng phân khúc tư duy cao vs tốc độ nhanh; luôn giữ đúng nguyên tắc phân tầng bên dưới.)*
 > - Khi mở **đoạn chat mới**, file `AGENTS.md` ở gốc dự án tự động nạp 100% cùng bộ 5 Workspace Skills tại `.agents/skills/`.
 
 ### A.1 Bảng Chọn Model Gemini 4 & Lệnh `/` cho 11 Chặng Triển khai (`Phase 0 → Phase 8`)

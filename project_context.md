@@ -1,6 +1,15 @@
-# PROJECT_CONTEXT.md — QuanLyThietBiCNTT
+# PROJECT_CONTEXT.md — QuanLyThietBiCNTT (TÀI LIỆU LỊCH SỬ v1.x — KHÔNG DÙNG LÀM THIẾT KẾ ĐÍCH v3.0)
 
-> Tài liệu này mô tả bối cảnh kỹ thuật, domain, kiến trúc, quy ước xử lý và định hướng chuẩn hóa cho dự án **QuanLyThietBiCNTT**. Mục tiêu là giúp developer hoặc mô hình AI tiếp tục phát triển dự án mà không hiểu sai nghiệp vụ, không phá vỡ cấu trúc hiện có và từng bước chuẩn hóa toàn bộ module theo cùng một mô hình xử lý/hiển thị.
+> [!WARNING]
+> **THÔNG BÁO QUAN TRỌNG CHO AI AGENT & LẬP TRÌNH VIÊN (`AS-IS-BASELINE.md` G17 & `PROJECT-RULES.md` Mục 0.3):**
+> - File `project_context.md` này là **hồ sơ lịch sử giai đoạn v1.x (EJS/Bootstrap cũ — 2026-05)** và chỉ được giữ lại để tra cứu lịch sử.
+> - **TUYỆT ĐỐI KHÔNG** dùng các quy ước cũ trong file này (như route legacy `/ajax`, `/:id/update`, EJS view, jQuery/Select2) để code cho nền tảng **v3.0 (Lộ trình B)**.
+> - **Nguồn sự thật bắt buộc cho v3.0:**
+>   1. Quy tắc bắt buộc tự động nạp: `AGENTS.md` và `docs/PROJECT-RULES.md` (v3.1).
+>   2. Hiện trạng DB & Code thực tế đã xác minh: `docs/AS-IS-BASELINE.md` (v1.2).
+>   3. Thiết kế đích & Kế hoạch triển khai v3.0: `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/DATA-SCHEMA.md`, `docs/API-CONTRACTS.md`, `docs/UI-DESIGN.md`, `docs/IMPLEMENTATION-PLAN.md` và `CHANGELOG.md`.
+
+> Tài liệu này mô tả bối cảnh kỹ thuật, domain, kiến trúc, quy ước xử lý và định hướng chuẩn hóa cho dự án **QuanLyThietBiCNTT** (giai đoạn v1.x).
 
 
 ---

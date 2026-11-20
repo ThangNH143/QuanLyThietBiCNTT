@@ -1,9 +1,9 @@
 # 4. PROJECT-RULES.md — Quy ước Lập trình, Chống Suy Đoán, Bảo trì & Chuẩn mực Nền tảng v3.0
 
 > **Dự án:** Hệ thống Quản lý Thiết bị CNTT (`QuanLyThietBiCNTT`) — Khung Nền tảng API Server & React SPA BVĐKKV Long Khánh  
-> **Phiên bản:** 3.0 (**Lộ trình B**: Đồng bộ chuẩn kiến trúc `server/` Express 5 Modular API Server `/api/v1/*` + `client/` React/Vite/TypeScript 100% Offline LAN + Bộ UI/UX BVĐKKV Long Khánh; giữ nguyên 100% Hiến pháp Chống Suy Đoán 4 Lớp, 10 Điều Cấm, SOP 0/A/B/C/D, Nghiệm thu 4 thành phần & Bộ Prompt Mẫu)  
+> **Phiên bản:** 3.1 (Liên kết chặt với bảng Approved Dependencies `ARCHITECTURE.md` 3.4, bảng biến môi trường `.env` `ARCHITECTURE.md` 5.1, và bảng ánh xạ thứ tự `recordsets[]` `DATA-SCHEMA.md` 4.1)  
 > **Cập nhật lần cuối:** 2026-11-20  
-> **Xem thay đổi chi tiết tại:** `CHANGELOG.md` mục `[3.0.0-plan]`
+> **Xem thay đổi chi tiết tại:** `CHANGELOG.md` mục `[3.0.2-plan]`
 
 > **Mục lục tra cứu nhanh:** [0. Chống Suy Đoán 4 Lớp](#0-nguyên-tắc-tối-thượng-cấm-suy-đoán--bắt-buộc-kiểm-tra-4-lớp-zero-assumption-policy) · [1–5. Quy chuẩn Backend/DB/Bảo mật/React UI](#1-quy-tắc-es-modules-server--typescript-client--bắt-buộc) · [6. 10 Điều Cấm AI](#6-giao-thức-làm-việc-bắt-buộc--các-hành-vi-bị-cấm-tuyệt-đối-với-ai-ai-working-protocol) · [10. Báo cáo Nghiệm thu](#10-quy-chuẩn-báo-cáo-nghiệm-thu-bắt-buộc-cho-từng-task--từng-giai-đoạn-acceptance-evidence-protocol) · [11. Quy trình từng bước cho AI (SOP 0/A/B/C/D)](#11-quy-trình-thực-thi-từng-bước-cho-ai-agent-theo-từng-loại-công-việc-ai-execution-workflows--sops) · [12. Chuẩn Bảo trì & Mở rộng Đa-WebApp](#12-chuẩn-bảo-trì-mở-rộng-đa-webapp--tiến-hóa-an-toàn-maintainability-clean-code--safe-evolution) · [13. Checklist 12 mục](#13-cổng-tự-kiểm-tra-bắt-buộc-trước-khi-báo-cáo-hoàn-thành-pre-delivery-self-audit-checklist) · [14. Bộ Prompt Mẫu Copy Nhanh](#14-bộ-prompt-mẫu-chuẩn-để-giao-việc--kiểm-soát-ai-agent-copy-paste-ready)
 
@@ -69,7 +69,7 @@ Trước khi sửa bất kỳ Bug-fix, Feature hay UI/UX nào, AI phải nêu ng
 ## 3. Quy tắc Database & Stored Procedure (SQL Server 2019 — compat `140`)
 
 1. **Đặt tên SP:** SP mới theo chuẩn `sp_<Entity>_GetPaged / _GetById / _GetDropdown / _Create / _Update / _ToggleStatus / _Delete / _Cancel / _Transfer`. SP hiện hữu giữ nguyên tên để tương thích ngược Phase 1.
-2. **Recordset phân trang:** SP mới và SP chuẩn hóa trả `recordsets[0] = data`, `recordsets[1] = [{ totalItems }]`.
+2. **Recordset phân trang (`DATA-SCHEMA.md` 4.1):** SP mới trả `recordsets[0] = data`, `recordsets[1] = [{ totalItems }]`; 7 SP hiện hữu giữ nguyên `recordsets[0] = [{ total }]`, `recordsets[1] = data` để tương thích `pre-v3.0`, và `server/src/shared/pagination.js` cung cấp hàm `extractPagedRecordsets(result)` xử lý thống nhất cả 2 chiều.
 3. **Khuôn đầu mỗi SP (bắt buộc):**
    ```sql
    SET ANSI_NULLS ON; SET QUOTED_IDENTIFIER ON;
@@ -258,9 +258,10 @@ flowchart TD
 - **API:** Giữ nguyên `/api/v1/*` tương thích ngược (chỉ thêm trường mở rộng); thay đổi phá vỡ phải tăng lên `/api/v2/*`.
 - **Rollback:** Gắn Git tag `pre-v3.0`, sao lưu toàn phần DB trước `--prod --backup-confirmed`, tách riêng migration và SP.
 
-### 12.4 Quản trị Cấu hình & Thư viện Phụ thuộc
-- Mọi biến `.env` mới phải đồng thời cập nhật `.env.example` (không bí mật thật), `server/src/config/env.js` (fail-fast) và `ARCHITECTURE.md`.
-- Chỉ thêm gói `npm` (ở `server/` hoặc `client/`) khi thật sự cần và **được chủ dự án duyệt**; giữ `package-lock.json` đồng bộ; kiểm tra `npm audit` sạch `high/critical`.
+### 12.4 Quản trị Cấu hình & Thư viện Phụ thuộc (`npm workspaces`)
+- Dự án dùng `npm workspaces` tại `package.json` gốc (`"workspaces": ["server", "client"]`).
+- Mọi biến `.env` tuân theo bảng đặc tả `ARCHITECTURE.md` 5.1; khi thêm biến mới phải đồng thời cập nhật `.env.example` (không bí mật thật), `server/src/config/env.js` (fail-fast, hỗ trợ fallback `APP_BASE_PATH ?? App_Base_Path`) và `ARCHITECTURE.md` 5.1.
+- Các gói `npm` nằm trong bảng Approved Dependencies (`ARCHITECTURE.md` 3.4) đã được phê duyệt sẵn; chỉ khi cần gói **ngoài** bảng `ARCHITECTURE.md` 3.4 mới phải dừng hỏi chủ dự án (Mục 0.3 #5); giữ `package-lock.json` đồng bộ; kiểm tra `npm audit` sạch `high/critical`.
 
 ---
 
